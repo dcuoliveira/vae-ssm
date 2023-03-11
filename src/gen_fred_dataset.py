@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 from settings import FRED_MD_PATH, DATA_UTILS_PATH, INPUTS_PATH
 
 def gen_fred_dataset():
+    # load fredmd data from URL
     raw_fredmd_df = pd.read_csv(FRED_MD_PATH)
 
     # descriptions
@@ -17,7 +18,7 @@ def gen_fred_dataset():
     # delete first row with des info
     raw_fredmd_df = raw_fredmd_df.drop([0], axis=0)
 
-    # fix dates and delete all NaN rows
+    # fix dates and delete rows with NaN in all columns
     raw_fredmd_df["date"] = pd.to_datetime(raw_fredmd_df["sasdate"], format="%m/%d/%Y")
     raw_fredmd_df.set_index("date", inplace=True)
     raw_fredmd_df = raw_fredmd_df.drop("sasdate", axis=1)
@@ -33,6 +34,7 @@ def gen_fred_dataset():
     selected_raw_fredmd_df = raw_fredmd_df.drop(list(prices_var_names), axis=1)
     target_df = pd.concat([selected_raw_fredmd_df, change_fredmd_prices_df], axis=1)
 
+    # export
     target_df.to_csv(os.path.join(INPUTS_PATH,  "fredmd_transf_df.csv"))
     target_df.to_csv(os.path.join(INPUTS_PATH,  "fredmd_raw_df.csv"))
 
