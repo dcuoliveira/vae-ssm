@@ -14,7 +14,7 @@
 - Don't forget to activate the environment and cd into the codebase directory when playing with the code later on
 
     ```bash
-    source activate fsl-ts
+    conda activate fsl-ts
     cd src
     ```
 
