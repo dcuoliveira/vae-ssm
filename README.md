@@ -1,1 +1,1 @@
-# few-shot-leearning-ts
+# few-shot-learning-ts
