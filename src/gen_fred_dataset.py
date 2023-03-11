@@ -38,6 +38,10 @@ def gen_fred_dataset(start_date):
     raw_fredmd_df = raw_fredmd_df.dropna(how="all")
     target_df = target_df.dropna(how="all")
 
+    # fix index name
+    target_df.index.name = "date"
+    raw_fredmd_df.index.name = "date"
+
     # export
     target_df.loc[start_date:].to_csv(os.path.join(INPUTS_PATH,  "fredmd_transf_df.csv"))
     raw_fredmd_df.loc[start_date:].to_csv(os.path.join(INPUTS_PATH,  "fredmd_raw_df.csv"))
