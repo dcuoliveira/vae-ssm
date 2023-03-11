@@ -1,0 +1,27 @@
+name: fsl-ts
+channels:
+  - pip
+  - defaults
+  - conda-forge
+  - pytorch
+  - pyg
+dependencies:
+  - python=3.10.0
+  - pip
+  - pandas
+  - numpy
+  - scipy
+  - pdblp
+  - tqdm
+  - jupyterlab
+  - pyg-lib
+  - pygod
+  - pytorch
+  - torchvision 
+  - torchaudio 
+  - pyg 
+  - pytorch-sparse 
+  - networkx
+  - scikit-learn
+  - pip:
+    - FredMD
