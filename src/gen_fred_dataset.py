@@ -24,6 +24,9 @@ def gen_fred_dataset():
     raw_fredmd_df = raw_fredmd_df.drop("sasdate", axis=1)
     raw_fredmd_df = raw_fredmd_df.dropna(how="all")
 
+    # select variables with description
+    raw_fredmd_df = raw_fredmd_df[list(set(list(des_fredmd_df["fred"])) & set(list(raw_fredmd_df.columns)))]
+
     # select price data with logdiff transf
     des_prices = des_fredmd_df.loc[(des_fredmd_df["group"] == "Prices")&(des_fredmd_df["tcode"] == 6)]
     prices_var_names = des_prices["fred"]
