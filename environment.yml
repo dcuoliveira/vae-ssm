@@ -24,4 +24,4 @@ dependencies:
   - networkx
   - scikit-learn
   - pip:
-    - FredMD
+    - fredapi
