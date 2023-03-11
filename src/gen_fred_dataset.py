@@ -5,7 +5,9 @@ import matplotlib.pyplot as plt
 
 from settings import FRED_MD_PATH, DATA_UTILS_PATH, INPUTS_PATH
 
-def gen_fred_dataset():
+START_DATE = "1960-01-01"
+
+def gen_fred_dataset(start_date):
     # load fredmd data from URL
     raw_fredmd_df = pd.read_csv(FRED_MD_PATH)
 
@@ -38,12 +40,12 @@ def gen_fred_dataset():
     target_df = pd.concat([selected_raw_fredmd_df, change_fredmd_prices_df], axis=1)
 
     # export
-    target_df.to_csv(os.path.join(INPUTS_PATH,  "fredmd_transf_df.csv"))
-    target_df.to_csv(os.path.join(INPUTS_PATH,  "fredmd_raw_df.csv"))
+    target_df.loc[start_date:].to_csv(os.path.join(INPUTS_PATH,  "fredmd_transf_df.csv"))
+    target_df.loc[start_date:].to_csv(os.path.join(INPUTS_PATH,  "fredmd_raw_df.csv"))
 
 
 if __name__ == "__main__":
-    gen_fred_dataset()
+    gen_fred_dataset(start_date=START_DATE)
   
 
 
