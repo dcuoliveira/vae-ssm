@@ -18,6 +18,7 @@ def load_pickle(path: str):
 
 def load_data(dataset_name):
     df = pd.read_csv(os.path.join(INPUTS_PATH,  "{}.csv".format(dataset_name)))
+    df.set_index("date", inplace=True)
 
     df = df.dropna()
 
