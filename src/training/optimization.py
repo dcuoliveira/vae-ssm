@@ -2,17 +2,17 @@ import pandas as pd
 from tqdm import tqdm
 from sklearn.model_selection import TimeSeriesSplit
 from sklearn.model_selection import RandomizedSearchCV, GridSearchCV
-from sklearn.metrics import make_scorer
+from sklearn.metrics import mean_squared_error
 
 
 def hyper_params_search(df,
                         wrapper,
+                        target_name,
                         n_iter,
                         n_splits,
                         n_jobs,
                         verbose,
-                        seed,
-                        target_name="target_return"):
+                        seed):
     """
     Use the dataframe 'df' to search for the best
     params for the model 'wrapper'.
@@ -23,10 +23,13 @@ def hyper_params_search(df,
     where ``n_samples`` is the number of samples. Hence,
     we can define
     n_splits = (n - test_size) // test_size
+
     :param df: train data
     :type df: pd.DataFrame
     :param wrapper: predictive model
     :type wrapper: sklearn model wrapper
+    :param target_name: name of the target column in 'df'
+    :type target_name: str
     :param n_iter: number of hyperparameter searchs
     :type n_iter: int
     :param n_splits: number of splits for the cross-validation
@@ -35,8 +38,6 @@ def hyper_params_search(df,
     :type n_jobs: int
     :param verbose: param to print iteration status
     :type verbose: bool, int
-    :param target_name: name of the target column in 'df'
-    :type target_name: str
     :return: R2 value
     :rtype: float
     """
@@ -45,7 +46,6 @@ def hyper_params_search(df,
     y = df[target_name].values
 
     time_split = TimeSeriesSplit(n_splits=n_splits)
-    roc_auc_scorer = make_scorer(roc_auc_score)
 
     if wrapper.search_type == 'random':
         model_search = RandomizedSearchCV(estimator=wrapper.ModelClass,
@@ -54,7 +54,7 @@ def hyper_params_search(df,
                                           cv=time_split,
                                           verbose=verbose,
                                           n_jobs=n_jobs,
-                                          scoring=roc_auc_scorer,
+                                          scoring=mean_squared_error,
                                           random_state=seed)
     elif wrapper.search_type == 'grid':
         model_search = GridSearchCV(estimator=wrapper.ModelClass,
@@ -62,7 +62,7 @@ def hyper_params_search(df,
                                     cv=time_split,
                                     verbose=verbose,
                                     n_jobs=n_jobs,
-                                    scoring=roc_auc_scorer)
+                                    scoring=mean_squared_error)
     else:
         raise Exception('search type method not registered')
 
@@ -75,12 +75,12 @@ def train_model(df,
                 init_steps,
                 predict_steps,
                 Wrapper,
+                target_name,
                 n_iter,
                 n_splits,
                 n_jobs,
                 verbose,
-                seed,
-                target_name):
+                seed):
     """
      Star the training procedure considering "init_steps" as the estimate
      starating point.
@@ -116,48 +116,37 @@ def train_model(df,
      """
 
     all_preds = []
-    all_fs = []
     for t in tqdm(range(init_steps, df.shape[0] - predict_steps, predict_steps), desc="Running TSCV"):
         
-        train_ys = df[:t]
-        test_ys = df[t:(t + predict_steps)]
-        
-        store_train_target = train_ys[target_name].values
-        store_test_target = test_ys[target_name].values
+        train_df = df[:t]
+        test_df = df[t:(t + predict_steps)]
 
-        scaler = StandardScaler()
-        train_ys_v = scaler.fit_transform(train_ys)
-        train_ys = pd.DataFrame(train_ys_v,
-                                columns=train_ys.columns,
-                                index=train_ys.index)
-        train_ys.loc[:, target_name] = store_train_target
-
-        test_ys_v = scaler.transform(test_ys)
-        test_ys = pd.DataFrame(test_ys_v,
-                               columns=test_ys.columns,
-                               index=test_ys.index)
-        test_ys.loc[:, target_name] = store_test_target
-        y_test = test_ys[target_name].values
+        # NOTE - Medeiros et al. (2019) do not apply any scaler technique on the inflation data 
+        # scaler = StandardScaler()
+        # train_df = scaler.fit_transform(train_df)
+        # test_df = scaler.transform(test_df)
 
         model_wrapper = Wrapper()
-        model_search = hyper_params_search(df=train_ys,
-                                            wrapper=model_wrapper,
-                                            n_jobs=n_jobs,
-                                            n_splits=n_splits,
-                                            n_iter=n_iter,
-                                            seed=seed,
-                                            verbose=verbose)
-        X_test = test_ys.drop(labels=target_name, axis=1).values
-        test_pred = model_search.best_estimator_.predict_proba(X_test)[:, 1]
-        dict_ = {"date": test_ys.index,
-                    "return_direction": y_test,
-                    "prediction": test_pred}
+        model_search = hyper_params_search(df=train_df,
+                                           wrapper=model_wrapper,
+                                           target_name=target_name,
+                                           n_jobs=n_jobs,
+                                           n_splits=n_splits,
+                                           n_iter=n_iter,
+                                           seed=seed,
+                                           verbose=verbose)
+        X_test = test_df.drop(labels=target_name, axis=1).values
+        test_pred = model_search.best_estimator_.predict(X_test)
+        
+        dict_ = {
+            "date": test_df.index,
+            "true": test_df[target_name],
+            "prediction": test_pred.item()
+            }
+        
         result = pd.DataFrame(dict_)
         all_preds.append(result)
 
-    pred_results = pd.concat(all_preds).reset_index(drop=True)
+    results = pd.concat(all_preds).reset_index(drop=True)
 
-    if len(all_fs) == 0:
-        all_fs_df = None
-
-    return pred_results, all_fs_df
+    return results
