@@ -12,7 +12,7 @@ from data.data_metadata import data_metadata
 from utils.conn_data import load_data
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--init_steps', type=int, default=252, help='Init steps to estimate before predicting.')
+parser.add_argument('--init_steps', type=int, default=24, help='Init steps to estimate before predicting.')
 parser.add_argument('--predict_steps', type=int, default=1, help='Steps ahead to predict.')
 parser.add_argument('--model_name', type=str, default="rf", help='Model name.')
 parser.add_argument('--dataset_name', type=str, default="fredmd", help='Dataset name.')
