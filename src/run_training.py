@@ -9,7 +9,8 @@ from models.deep_learning import NN3Wrapper
 from training.optimization import train_model
 from models.models_metadata import models_metadata
 from data.data_metadata import data_metadata
-from utils.conn_data import load_data
+from utils.conn_data import load_data, save_pickle
+from settings import OUTPUTS_PATH
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--init_steps', type=int, default=24, help='Init steps to estimate before predicting.')
@@ -23,7 +24,6 @@ parser.add_argument('--n_jobs', type=int, default=-1, help='Number of cores to u
 parser.add_argument('--verbose', type=bool, default=False, help='Print errors and partial results if True.')
 parser.add_argument('--seed', type=int, default=1, help='Seed to use in the hyperparameter search.')
 
-
 if __name__ == '__main__':
     init = time()
 
@@ -33,16 +33,24 @@ if __name__ == '__main__':
     df = load_data(dataset_name=data_metadata[args.dataset_name])
 
     # run training procedure
-    pred_results = train_model(df=df,
-                               init_steps=args.init_steps,
-                               predict_steps=args.predict_steps,
-                               Wrapper=models_metadata[args.model_name],
-                               target_name=args.target_name,
-                               n_iter=args.n_iter,
-                               n_splits=args.n_splits,
-                               n_jobs=args.n_jobs,
-                               verbose=args.verbose,
-                               seed=args.seed)
+    results = train_model(df=df,
+                          init_steps=args.init_steps,
+                          predict_steps=args.predict_steps,
+                          Wrapper=models_metadata[args.model_name],
+                          target_name=args.target_name,
+                          n_iter=args.n_iter,
+                          n_splits=args.n_splits,
+                          n_jobs=args.n_jobs,
+                          verbose=args.verbose,
+                          seed=args.seed)
+    
+    # check if output dir exists
+    if not os.path.isdir(os.path.join(OUTPUTS_PATH, args.target_name)):
+        os.mkdir(os.path.join(OUTPUTS_PATH, args.target_name))
+    
+    # save results
+    save_pickle(path=os.path.join(OUTPUTS_PATH, args.target_name,  "results_{}.pickle".format(args.model_name)),
+                obj=results)
 
     tempo = (time() - init) / 60
     print("\nDONE\ntotal run time = ", np.round(tempo, 2), "min")
