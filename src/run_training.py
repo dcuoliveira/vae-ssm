@@ -25,7 +25,7 @@ parser.add_argument('--seed', type=int, default=1, help='Seed to use in the hype
 
 if __name__ == '__main__':
     init = time()
-
+    
     args = parser.parse_args()
 
     # load dataset
