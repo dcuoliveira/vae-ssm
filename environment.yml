@@ -23,6 +23,7 @@ dependencies:
   - pytorch-sparse 
   - networkx
   - scikit-learn
+  - statsmodels
   - pip:
     - fredapi
     - FredMD
