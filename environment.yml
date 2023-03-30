@@ -24,6 +24,7 @@ dependencies:
   - networkx
   - scikit-learn
   - statsmodels
+  - lightgbm
   - pip:
     - fredapi
     - FredMD
