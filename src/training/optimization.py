@@ -2,7 +2,7 @@ import pandas as pd
 from tqdm import tqdm
 from sklearn.model_selection import TimeSeriesSplit
 from sklearn.model_selection import RandomizedSearchCV, GridSearchCV
-from sklearn.metrics import mean_squared_error
+from sklearn.metrics import mean_squared_error, make_scorer
 
 
 def hyper_params_search(df,
@@ -44,6 +44,7 @@ def hyper_params_search(df,
 
     X = df.drop(labels=target_name, axis=1).values
     y = df[target_name].values
+    scoring = make_scorer(mean_squared_error)
 
     time_split = TimeSeriesSplit(n_splits=n_splits)
 
@@ -54,7 +55,7 @@ def hyper_params_search(df,
                                           cv=time_split,
                                           verbose=verbose,
                                           n_jobs=n_jobs,
-                                          scoring=mean_squared_error,
+                                          scoring=scoring,
                                           random_state=seed)
     elif wrapper.search_type == 'grid':
         model_search = GridSearchCV(estimator=wrapper.ModelClass,
@@ -62,7 +63,7 @@ def hyper_params_search(df,
                                     cv=time_split,
                                     verbose=verbose,
                                     n_jobs=n_jobs,
-                                    scoring=mean_squared_error)
+                                    scoring=scoring)
     else:
         raise Exception('search type method not registered')
 
