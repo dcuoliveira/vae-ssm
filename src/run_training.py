@@ -13,9 +13,10 @@ from utils.conn_data import load_data
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--init_steps', type=int, default=252, help='Init steps to estimate before predicting.')
-parser.add_argument('--prediction_steps', type=int, default=1, help='Steps ahead to predict.')
+parser.add_argument('--predict_steps', type=int, default=1, help='Steps ahead to predict.')
 parser.add_argument('--model_name', type=str, default="rf", help='Model name.')
 parser.add_argument('--dataset_name', type=str, default="fredmd", help='Dataset name.')
+parser.add_argument('--target_name', type=str, default="CPIAUCSL", help='Name of the target variable to be predicted.')
 parser.add_argument('--n_iter', type=int, default=10, help='Number of samples from the hyperparameter space.')
 parser.add_argument('--n_splits', type=int, default=5, help='Number of splits to use in the cv procedure.')
 parser.add_argument('--n_jobs', type=int, default=-1, help='Number of cores to use.')
@@ -25,22 +26,23 @@ parser.add_argument('--seed', type=int, default=1, help='Seed to use in the hype
 
 if __name__ == '__main__':
     init = time()
-    
+
     args = parser.parse_args()
 
     # load dataset
     df = load_data(dataset_name=data_metadata[args.dataset_name])
 
     # run training procedure
-    pred_results, fs_results = train_model(df=df,
-                                           init_steps=args.init_steps,
-                                           predict_steps=args.predict_steps,
-                                           Wrapper=models_metadata[args.model_name],
-                                           n_iter=args.n_iter,
-                                           n_splits=args.n_splits,
-                                           n_jobs=args.n_jobs,
-                                           verbose=args.verbose,
-                                           seed=args.seed)
+    pred_results = train_model(df=df,
+                               init_steps=args.init_steps,
+                               predict_steps=args.predict_steps,
+                               Wrapper=models_metadata[args.model_name],
+                               target_name=args.target_name,
+                               n_iter=args.n_iter,
+                               n_splits=args.n_splits,
+                               n_jobs=args.n_jobs,
+                               verbose=args.verbose,
+                               seed=args.seed)
 
     tempo = (time() - init) / 60
     print("\nDONE\ntotal run time = ", np.round(tempo, 2), "min")
