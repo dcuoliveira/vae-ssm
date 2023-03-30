@@ -8,11 +8,14 @@ from models.machine_learning import RandomForestWrapper
 from models.deep_learning import NN3Wrapper
 from training.optimization import train_model
 from models.models_metadata import models_metadata
+from data.data_metadata import data_metadata
+from utils.conn_data import load_data
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--init_steps', type=int, default=252, help='Init steps to estimate before predicting.')
 parser.add_argument('--prediction_steps', type=int, default=1, help='Steps ahead to predict.')
-parser.add_argument('--model_name', type=str, default="rf", help='Steps to estimate graph embeddings.')
+parser.add_argument('--model_name', type=str, default="rf", help='Model name.')
+parser.add_argument('--dataset_name', type=str, default="fredmd", help='Dataset name.')
 parser.add_argument('--n_iter', type=int, default=10, help='Number of samples from the hyperparameter space.')
 parser.add_argument('--n_splits', type=int, default=5, help='Number of splits to use in the cv procedure.')
 parser.add_argument('--n_jobs', type=int, default=-1, help='Number of cores to use.')
@@ -24,6 +27,11 @@ if __name__ == '__main__':
     init = time()
 
     args = parser.parse_args()
+
+    # load dataset
+    df = load_data(dataset_name=data_metadata[args.dataset_name])
+
+    # run training procedure
     pred_results, fs_results = train_model(df=df,
                                            init_steps=args.init_steps,
                                            predict_steps=args.predict_steps,
