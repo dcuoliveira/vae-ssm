@@ -7,7 +7,7 @@ class RandomForestWrapper():
     def __init__(self, model_params=None):
         self.model_name = "random_forest"
         self.search_type = 'random'
-        self.param_grid = {"max_features": ['auto', 'sqrt', 'log2'],
+        self.param_grid = {"max_features": [1, 'sqrt', 'log2'],
                            "min_samples_split": sp_randint(2, 31),
                            "n_estimators": sp_randint(2, 301),
                            "max_depth": sp_randint(2, 20)}
