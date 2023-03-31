@@ -6,7 +6,7 @@ class NN3Wrapper():
     def __init__(self, model_params=None):
         self.model_name = "nn3"
         self.search_type = 'random'
-        self.param_grid = {"early_stopping": [True],
+        self.param_grid = {"early_stopping": [False],
                            "learning_rate": ["invscaling"],
                            "learning_rate_init": np.linspace(0.001, 0.999, 100),
                            'alpha': np.linspace(0.001, 0.999, 100),
