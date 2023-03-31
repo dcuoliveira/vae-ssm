@@ -5,5 +5,5 @@ from models.deep_learning import *
 models_metadata = {
     
     "rf": RandomForestWrapper,
-    "simple_mlp":  MLPRegressor,
+    "simple_mlp":  NN3Wrapper,
                    }
