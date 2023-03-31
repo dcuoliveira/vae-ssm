@@ -15,7 +15,7 @@ from settings import OUTPUTS_PATH
 parser = argparse.ArgumentParser()
 parser.add_argument('--init_steps', type=int, default=24, help='Init steps to estimate before predicting.')
 parser.add_argument('--predict_steps', type=int, default=1, help='Steps ahead to predict.')
-parser.add_argument('--model_name', type=str, default="rf", help='Model name.')
+parser.add_argument('--model_name', type=str, default="simple_mlp", help='Model name.')
 parser.add_argument('--dataset_name', type=str, default="fredmd", help='Dataset name.')
 parser.add_argument('--target_name', type=str, default="CPIAUCSL", help='Name of the target variable to be predicted.')
 parser.add_argument('--n_iter', type=int, default=10, help='Number of samples from the hyperparameter space.')
