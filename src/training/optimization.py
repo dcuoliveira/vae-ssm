@@ -3,7 +3,7 @@ from tqdm import tqdm
 from sklearn.model_selection import TimeSeriesSplit
 from sklearn.model_selection import RandomizedSearchCV, GridSearchCV
 from sklearn.metrics import mean_squared_error, make_scorer
-
+from sklearn.preprocessing import StandardScaler
 
 def hyper_params_search(df,
                         wrapper,
@@ -124,8 +124,12 @@ def train_model(df,
 
         # NOTE - Medeiros et al. (2019) do not apply any scaler technique on the inflation data 
         # scaler = StandardScaler()
-        # train_df = scaler.fit_transform(train_df)
-        # test_df = scaler.transform(test_df)
+        # train_df = pd.DataFrame(scaler.fit_transform(train_df),
+        #                         columns=df[:t].columns,
+        #                         index=df[:t].index)
+        # test_df = pd.DataFrame(scaler.transform(test_df),
+        #                        columns=df[t:(t + predict_steps)].columns,
+        #                        index=df[t:(t + predict_steps)].index)
 
         model_wrapper = Wrapper()
         model_search = hyper_params_search(df=train_df,
