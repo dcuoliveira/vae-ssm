@@ -25,6 +25,7 @@ dependencies:
   - scikit-learn
   - statsmodels
   - lightgbm
+  - seaborn
   - pip:
     - fredapi
     - FredMD
