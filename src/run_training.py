@@ -4,8 +4,8 @@ import numpy as np
 import argparse
 from time import time
 
-from models.machine_learning import RandomForestWrapper
-from models.deep_learning import NN3Wrapper
+from models.RandomForest import RandomForestWrapper
+from models.MLP import NN3Wrapper
 from training.optimization import train_model
 from models.models_metadata import models_metadata
 from data.data_metadata import data_metadata
