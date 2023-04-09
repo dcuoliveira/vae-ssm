@@ -1,3 +1,5 @@
+import numpy as np
+import torch
 import torch.nn as nn
 import torch.optim as optim
 
@@ -65,7 +67,7 @@ class VanillaGAN(Scalers):
                  scaler_type):
         
         # TODO - have to implement scaler for mixed frequency data
-        Scalers.__init__(scaler_type=scaler_type)
+        Scalers.__init__(self, scaler_type=scaler_type)
 
         # instantiate generator and discriminator
         self.generator = Generator(n_input=n_input, n_output=n_output)
@@ -96,8 +98,8 @@ class VanillaGAN(Scalers):
         prediction_fake = self.discriminator.forward(x=fake_data)
 
         # update discriminator loss
-        fake_loss = criterion(prediction_fake, torch.zeros((self.batch_size, 1)))
-        real_loss = criterion(predictions_real, torch.ones((self.batch_size, 1)))
+        fake_loss = self.criterion(prediction_fake, torch.zeros((self.batch_size, 1)))
+        real_loss = self.criterion(predictions_real, torch.ones((self.batch_size, 1)))
         d_loss = fake_loss + real_loss
         d_loss.backward()
         optimizer.step()
@@ -112,7 +114,7 @@ class VanillaGAN(Scalers):
         prediction = self.discriminator.forward(x=fake_data)
 
         # compute generator loss - try to fool the discriminator
-        g_loss = criterion(prediction, torch.ones((self.batch_size, 1)))
+        g_loss = self.criterion(prediction, torch.ones((self.batch_size, 1)))
         g_loss.backward()
         optimizer.step()
 
@@ -133,7 +135,10 @@ class VanillaGAN(Scalers):
         g_optimizer = optim.Adam(self.generator.parameters(), lr=learning_rate)
         d_optimizer = optim.Adam(self.discriminator.parameters(), lr=learning_rate)
 
-        for epoch in range(self.n_epochs):
+        g_losses = []
+        d_losses = []
+        d_loss = g_loss = 0
+        for epoch in range(self.n_epoch):
           for i in range(self.n_iter):
             batch_data = get_random_data_batch(data=proc_data, batch_size=self.batch_size)
 
@@ -142,7 +147,18 @@ class VanillaGAN(Scalers):
             fake_data = self.generator.forward(x=noise).detach()
 
             # compute discriminator loss
-            d_loss = self.compute_discriminator_loss(true_data=batch_data, fake_data=fake_data, optimizer=d_optimizer)
+            d_loss += self.compute_discriminator_loss(true_data=batch_data, fake_data=fake_data, optimizer=d_optimizer)
 
             # compute generator loss
-            g_error = self.compute_generator_loss(fake_data=fake_data, optimizer=g_optimizer)
+            g_loss += self.compute_generator_loss(fake_data=fake_data, optimizer=g_optimizer)
+        
+          g_losses.append(g_loss / i)
+          d_losses.append(d_loss / i)
+          print('Epoch {}: g_loss: {:.8f} d_loss: {:.8f}\r'.format(epoch, g_loss / (i + 1), d_loss / (i + 1)))
+
+        training_results = {
+            "generator_loss": g_losses,
+            "discriminator_loss": d_losses,
+            }
+        
+        return training_results
