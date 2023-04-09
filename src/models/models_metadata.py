@@ -1,5 +1,5 @@
-from models.machine_learning import *
-from models.deep_learning import *
+from models.MLP import *
+from models.RandomForest import *
 
 
 models_metadata = {
