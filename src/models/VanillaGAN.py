@@ -187,7 +187,7 @@ class VanillaGAN(Scalers):
             d_losses.append(avg_d_loss)
 
             # print expected loss
-            print('Epoch {}: g_loss: {:.3f} d_loss: {:.3f}\r'.format(epoch, avg_d_loss, avg_g_loss))
+            print('Epoch {}: g_loss: {:.8f} d_loss: {:.8f}\r'.format(epoch, avg_d_loss, avg_g_loss))
 
         training_results = {
             "generator_loss": g_losses,
