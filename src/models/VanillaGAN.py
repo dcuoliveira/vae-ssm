@@ -1,7 +1,7 @@
 import torch.nn as nn
 import torch.optim as optim
 
-from utils.data_utils import get_random_data_batch 
+from utils.data_utils import get_random_data_batch
 from models.Scalers import Scalers
 
 class Generator(nn.Module):
@@ -54,7 +54,7 @@ class Discriminator(nn.Module):
         x = self.fc2(x)
         return x
     
-class VanilllaGAN(Scalers):
+class VanillaGAN(Scalers):
     def __init__(self,
                  n_input,
                  n_output,
@@ -146,42 +146,3 @@ class VanilllaGAN(Scalers):
 
             # compute generator loss
             g_error = self.compute_generator_loss(fake_data=fake_data, optimizer=g_optimizer)
-
-
-
-if __name__ == "__main__":
-    import pandas as pd
-    import os
-    import numpy as np
-
-    import torch
-    import torch.nn.functional as F
-
-    from settings import INPUTS_PATH
-
-    # read dataset and dropna 
-    data = pd.read_csv(os.path.join(INPUTS_PATH, "adult.csv"))
-    data = data[data != "?"].dropna()
-
-    num_cols = ['age', 'education.num', 'hours.per.week']
-    data = data[num_cols]
-
-    # training hyperparameters
-    learning_rate = 2e-4
-    criterion = F.binary_cross_entropy
-    n_epoch = 10
-    n_iter = 10
-    batch_size_perc = 0.2
-
-    # model hyperparameters
-    n_input = data.shape[1]
-    n_output = data.shape[1]
-
-    # train vanilla GAN
-    vgan = VanilllaGAN(n_input=n_input, n_output=n_output,
-                       n_epoch=n_epoch,
-                       n_iter=n_iter,
-                       criterion=criterion,
-                       batch_size_perc=batch_size_perc,
-                       scaler_type="min_max_scaler")
-    results = vgan.train(data=data, learning_rate=learning_rate)
