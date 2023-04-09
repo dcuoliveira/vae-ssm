@@ -7,10 +7,14 @@ class Scalers:
         self.scaler_metadata = {
             "min_max_scaler": MinMaxScaler
             }
-        self.scaler = self.scaler_metadata[scaler_type](params)
+        
+        if params == None:
+            self.scaler = self.scaler_metadata[scaler_type]()
+        else:
+            self.scaler = self.scaler_metadata[scaler_type](params)
 
     def fit(self, data):
         self.scaler.fit(data)
 
-    def tranform(self, data):
+    def transform(self, data):
         return self.scaler.transform(data)
