@@ -109,6 +109,7 @@ class VanillaGAN(Scalers):
     def compute_generator_loss(self, fake_data, optimizer):
 
         # clean generator gradient
+        optimizer.zero_grad()
 
         # run discriminator
         prediction = self.discriminator.forward(x=fake_data)
@@ -137,28 +138,28 @@ class VanillaGAN(Scalers):
 
         g_losses = []
         d_losses = []
-        d_loss = g_loss = 0
         for epoch in range(self.n_epoch):
-          for i in range(self.n_iter):
-            batch_data = get_random_data_batch(data=proc_data, batch_size=self.batch_size)
+            d_loss = g_loss = 0
+            for i in range(self.n_iter):
+                batch_data = get_random_data_batch(data=proc_data, batch_size=self.batch_size)
 
-            # generate fake data
-            noise = torch.normal(mean=0, std=1, size=(self.batch_size, self.ncols))
-            fake_data = self.generator.forward(x=noise).detach()
+                # generate fake data
+                noise = torch.normal(mean=0, std=1, size=(self.batch_size, self.ncols))
+                fake_data = self.generator.forward(x=noise).detach()
 
-            # compute discriminator loss
-            d_loss += self.compute_discriminator_loss(true_data=batch_data, fake_data=fake_data, optimizer=d_optimizer)
+                # compute discriminator loss
+                d_loss += self.compute_discriminator_loss(true_data=batch_data, fake_data=fake_data, optimizer=d_optimizer)
 
-            # compute generator loss
-            g_loss += self.compute_generator_loss(fake_data=fake_data, optimizer=g_optimizer)
-        
-          g_losses.append(g_loss / i)
-          d_losses.append(d_loss / i)
-          print('Epoch {}: g_loss: {:.8f} d_loss: {:.8f}\r'.format(epoch, g_loss / (i + 1), d_loss / (i + 1)))
+                # compute generator loss
+                g_loss += self.compute_generator_loss(fake_data=fake_data, optimizer=g_optimizer)
+            
+            g_losses.append(g_loss.item() / (i + 1))
+            d_losses.append(d_loss.item() / (i + 1))
+            print('Epoch {}: g_loss: {:.8f} d_loss: {:.8f}\r'.format(epoch, g_loss / (i + 1), d_loss / (i + 1)))
 
         training_results = {
             "generator_loss": g_losses,
             "discriminator_loss": d_losses,
             }
-        
+
         return training_results
