@@ -21,8 +21,8 @@ data = data[num_cols]
 # training hyperparameters
 learning_rate = 2e-4
 criterion = F.binary_cross_entropy
-n_epoch = 200
-n_iter = 1
+n_epoch = 100
+n_iter = 10
 batch_size_perc = 0.2
 
 # model hyperparameters
