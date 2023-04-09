@@ -2,6 +2,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
+from torch.utils.data import DataLoader
 
 from utils.data_utils import get_random_data_batch
 from models.Scalers import Scalers
@@ -76,7 +77,7 @@ class VanillaGAN(Scalers):
                  n_epoch,
                  n_iter,
                  criterion,
-                 batch_size_perc,
+                 batch_size,
                  scaler_type):
         
         # TODO - have to implement scaler for mixed frequency data
@@ -88,7 +89,7 @@ class VanillaGAN(Scalers):
 
         self.n_epoch = n_epoch
         self.n_iter = n_iter
-        self.batch_size_perc = batch_size_perc
+        self.batch_size = batch_size
         self.criterion = criterion
 
     def get_random_data_batch(self, data, batch_size):
@@ -99,34 +100,34 @@ class VanillaGAN(Scalers):
 
         return torch.tensor(selected_data).float()
 
-    def compute_discriminator_loss(self, true_data, fake_data, optimizer):
+    def compute_discriminator_loss(self, X, fake_X, optimizer):
         
         # clean discriminator gradient
         optimizer.zero_grad()
 
         # run discriminator on fake data
-        prediction_fake = self.discriminator.forward(x=fake_data)
+        prediction_fake = self.discriminator.forward(x=fake_X)
 
         # run discriminator on real data
-        predictions_real = self.discriminator.forward(x=true_data)
+        predictions_real = self.discriminator.forward(x=X)
 
         # update discriminator loss
         # maximize mean_i[log(1 - D(x_i)) + log(1 - D(G(z_i)))]
         fake_loss = self.criterion(prediction_fake, torch.zeros((self.batch_size, 1)))
         real_loss = self.criterion(predictions_real, torch.ones((self.batch_size, 1)))
-        d_loss = fake_loss + real_loss
+        d_loss = (fake_loss + real_loss) / 2
         d_loss.backward()
         optimizer.step()
 
         return d_loss
     
-    def compute_generator_loss(self, fake_data, optimizer):
+    def compute_generator_loss(self, fake_X, optimizer):
 
         # clean generator gradient
         optimizer.zero_grad()
 
         # run discriminator
-        prediction = self.discriminator.forward(x=fake_data)
+        prediction = self.discriminator.forward(x=fake_X)
 
         # compute generator loss - try to fool the discriminator
         # instead of minimizing mean_i[log(1 - D(G(z_i)))] we are maximizing mean_i[log(D(G(z_i)))]
@@ -142,42 +143,51 @@ class VanillaGAN(Scalers):
         self.fit(data)
         proc_data = self.transform(data)
 
+        # build data loader
+        proc_data_loader = DataLoader(proc_data, shuffle=True, batch_size=self.batch_size, drop_last=True)
+
         # util dims
         self.nrows = proc_data.shape[0]
         self.ncols = proc_data.shape[1]
-        self.batch_size = int(self.nrows * self.batch_size_perc)
 
         # define optimizers
         g_optimizer = optim.Adam(self.generator.parameters(), lr=learning_rate)
         d_optimizer = optim.Adam(self.discriminator.parameters(), lr=learning_rate)
 
+        g_samples = torch.zeros((self.n_epoch, self.nrows, self.ncols))
         g_losses = []
         d_losses = []
         for epoch in range(self.n_epoch):
-            for k in range(self.n_iter):
+            for X in proc_data_loader:
 
-                # sample fake data
-                noise = torch.normal(mean=0, std=1, size=(self.batch_size, self.ncols))
-                fake_data = self.generator.forward(x=noise).detach()
+                # train discriminator
+                ## sample fake data
+                Z = torch.normal(mean=0, std=1, size=(self.batch_size, self.ncols))
+                fake_X = self.generator.forward(x=Z).detach()
 
-                # sample real data
-                batch_data = get_random_data_batch(data=proc_data, batch_size=self.batch_size)
+                ## compute discriminator loss
+                d_loss = self.compute_discriminator_loss(X=X.float(), fake_X=fake_X, optimizer=d_optimizer)
 
-                # compute discriminator loss
-                d_loss = self.compute_discriminator_loss(true_data=batch_data, fake_data=fake_data, optimizer=d_optimizer)
+                # train generator
+                ## sample fake data
+                Z = torch.normal(mean=0, std=1, size=(self.batch_size, self.ncols))
+                fake_X = self.generator.forward(x=Z)
 
-            # sample fake data
-            noise = torch.normal(mean=0, std=1, size=(self.batch_size, self.ncols))
-            fake_data = self.generator.forward(x=noise)
+                ## compute generator loss
+                g_loss = self.compute_generator_loss(fake_X=fake_X, optimizer=g_optimizer)
 
-            # compute generator loss
-            g_loss = self.compute_generator_loss(fake_data=fake_data, optimizer=g_optimizer)
-                
-            # save losses
-            n = (self.n_iter + 1)
-            g_losses.append(g_loss.item())
-            d_losses.append(d_loss.item())
-            print('Epoch {}: g_loss: {:.8f} d_loss: {:.8f}\r'.format(epoch, g_loss, d_loss))
+            # visualize generator
+            Z = torch.normal(mean=0, std=1, size=(self.nrows, self.ncols))
+            fake_X = self.generator.forward(x=Z)
+            g_samples[epoch, :, :] = fake_X
+
+            # compute expected loss
+            avg_d_loss, avg_g_loss = d_loss / self.batch_size, g_loss / self.batch_size
+            g_losses.append(avg_g_loss)
+            d_losses.append(avg_d_loss)
+
+            # print expected loss
+            print('Epoch {}: g_loss: {:.3f} d_loss: {:.3f}\r'.format(epoch, avg_d_loss, avg_g_loss))
 
         training_results = {
             "generator_loss": g_losses,
