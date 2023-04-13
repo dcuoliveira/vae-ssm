@@ -13,28 +13,10 @@ class Generator(nn.Module):
         self.n_input = n_input
         self.n_output = n_output
 
-        self.fc0 = nn.Sequential(
-                    nn.Linear(self.n_input, 256),
-                    nn.LeakyReLU(0.2)
-                    )
-        self.fc1 = nn.Sequential(
-                    nn.Linear(256, 512),
-                    nn.LeakyReLU(0.2)
-                    )
-        self.fc2 = nn.Sequential(
-                    nn.Linear(512, 1024),
-                    nn.LeakyReLU(0.2)
-                    )
-        self.fc3 = nn.Sequential(
-                    nn.Linear(1024, self.n_output),
-                    nn.Tanh()
-                    )
+        self.fc0 = nn.Sequential(nn.Linear(2, 2))
         
     def forward(self, x):
         x = self.fc0(x)
-        x = self.fc1(x)
-        x = self.fc2(x)
-        x = self.fc3(x)
         return x
     
 class Discriminator(nn.Module):
@@ -43,31 +25,15 @@ class Discriminator(nn.Module):
         self.n_input = n_input
         self.n_output = n_output
 
-        self.fc0 = nn.Sequential(
-                    nn.Linear(self.n_input, 1024),
-                    nn.LeakyReLU(0.2),
-                    nn.Dropout(0.3)
-                    )
-        self.fc1 = nn.Sequential(
-                    nn.Linear(1024, 512),
-                    nn.LeakyReLU(0.2),
-                    nn.Dropout(0.3)
-                    )
-        self.fc2 = nn.Sequential(
-                    nn.Linear(512, 256),
-                    nn.LeakyReLU(0.2),
-                    nn.Dropout(0.3)
-                    )
-        self.fc3 = nn.Sequential(
-                    nn.Linear(256, self.n_output),
-                    nn.Sigmoid()
-                    )
+        self.fc0 = nn.Sequential( 
+            nn.Linear(2, 5), 
+            nn.Tanh(), 
+            nn.Linear(5, 3), 
+            nn.Tanh(), 
+            nn.Linear(3, 1))
         
     def forward(self, x):
         x = self.fc0(x)
-        x = self.fc1(x)
-        x = self.fc2(x)
-        x = self.fc3(x)
         return x
     
 class VanillaGAN(Scalers):
@@ -75,7 +41,6 @@ class VanillaGAN(Scalers):
                  n_input,
                  n_output,
                  n_epoch,
-                 n_iter,
                  criterion,
                  batch_size,
                  scaler_type):
@@ -88,7 +53,6 @@ class VanillaGAN(Scalers):
         self.discriminator = Discriminator(n_input=n_input, n_output=1)
 
         self.n_epoch = n_epoch
-        self.n_iter = n_iter
         self.batch_size = batch_size
         self.criterion = criterion
 
@@ -100,10 +64,14 @@ class VanillaGAN(Scalers):
 
         return torch.tensor(selected_data).float()
 
-    def compute_discriminator_loss(self, X, fake_X, optimizer):
-        
+    def compute_discriminator_loss(self, X, optimizer):
+
         # clean discriminator gradient
         optimizer.zero_grad()
+
+        ## sample fake data
+        Z = torch.normal(mean=0, std=1, size=(self.batch_size, self.ncols))
+        fake_X = self.generator.forward(x=Z).detach()
 
         # run discriminator on fake data
         prediction_fake = self.discriminator.forward(x=fake_X)
@@ -121,10 +89,14 @@ class VanillaGAN(Scalers):
 
         return d_loss
     
-    def compute_generator_loss(self, fake_X, optimizer):
+    def compute_generator_loss(self, optimizer):
 
         # clean generator gradient
         optimizer.zero_grad()
+
+        ## sample fake data
+        Z = torch.normal(mean=0, std=1, size=(self.batch_size, self.ncols))
+        fake_X = self.generator.forward(x=Z)
 
         # run discriminator
         prediction = self.discriminator.forward(x=fake_X)
@@ -137,11 +109,26 @@ class VanillaGAN(Scalers):
 
         return g_loss
 
-    def train(self, data, learning_rate):
+    def train(self,
+              data,
+              d_learning_rate,
+              g_learning_rate,
+              gaussian_initialization=False,
+              apply_scaling=False):
+
+        # initialize nn weights by sampling a gaussian dist 
+        if gaussian_initialization:
+            for w in self.discriminator.parameters():
+                nn.init.normal_(w, 0, 0.02)
+            for w in self.generator.parameters():
+                nn.init.normal_(w, 0, 0.02)
 
         # apply data scaling
-        self.fit(data)
-        proc_data = self.transform(data)
+        if apply_scaling:
+            self.fit(data)
+            proc_data = self.transform(data)
+        else:
+            proc_data = data
 
         # build data loader
         proc_data_loader = DataLoader(proc_data, shuffle=True, batch_size=self.batch_size, drop_last=True)
@@ -151,45 +138,41 @@ class VanillaGAN(Scalers):
         self.ncols = proc_data.shape[1]
 
         # define optimizers
-        g_optimizer = optim.Adam(self.generator.parameters(), lr=learning_rate)
-        d_optimizer = optim.Adam(self.discriminator.parameters(), lr=learning_rate)
+        g_optimizer = optim.Adam(self.generator.parameters(), lr=g_learning_rate)
+        d_optimizer = optim.Adam(self.discriminator.parameters(), lr=d_learning_rate)
 
         g_samples = torch.zeros((self.n_epoch, self.nrows, self.ncols))
         g_losses = []
         d_losses = []
         for epoch in range(self.n_epoch):
+            m = d_loss = g_loss = 0
             for X in proc_data_loader:
-
-                # train discriminator
-                ## sample fake data
-                Z = torch.normal(mean=0, std=1, size=(self.batch_size, self.ncols))
-                fake_X = self.generator.forward(x=Z).detach()
+                
+                m  += X.shape[0]
 
                 ## compute discriminator loss
-                d_loss = self.compute_discriminator_loss(X=X.float(), fake_X=fake_X, optimizer=d_optimizer)
-
-                # train generator
-                ## sample fake data
-                Z = torch.normal(mean=0, std=1, size=(self.batch_size, self.ncols))
-                fake_X = self.generator.forward(x=Z)
+                d_loss += self.compute_discriminator_loss(X=X.float(), optimizer=d_optimizer)
 
                 ## compute generator loss
-                g_loss = self.compute_generator_loss(fake_X=fake_X, optimizer=g_optimizer)
+                g_loss += self.compute_generator_loss(optimizer=g_optimizer)
 
             # visualize generator
             Z = torch.normal(mean=0, std=1, size=(self.nrows, self.ncols))
-            fake_X = self.generator.forward(x=Z)
-            g_samples[epoch, :, :] = fake_X
+            fake_X = self.generator.forward(x=Z).detach()
+            # g_samples[epoch, :, :] = torch.tensor(self.inverse_transform(fake_X)).float()
+            g_samples[epoch, :, :] = torch.tensor(fake_X).float()
 
             # compute expected loss
-            avg_d_loss, avg_g_loss = d_loss / self.batch_size, g_loss / self.batch_size
-            g_losses.append(avg_g_loss)
-            d_losses.append(avg_d_loss)
+            avg_d_loss, avg_g_loss = d_loss / m, g_loss / m
+            g_losses.append(avg_g_loss.item())
+            d_losses.append(avg_d_loss.item())
 
             # print expected loss
             print('Epoch {}: g_loss: {:.8f} d_loss: {:.8f}\r'.format(epoch, avg_d_loss, avg_g_loss))
 
         training_results = {
+            "data": data,
+            "generator_samples": g_samples,
             "generator_loss": g_losses,
             "discriminator_loss": d_losses,
             }

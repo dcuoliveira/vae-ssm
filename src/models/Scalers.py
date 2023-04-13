@@ -18,3 +18,6 @@ class Scalers:
 
     def transform(self, data):
         return self.scaler.transform(data)
+    
+    def inverse_transform(self, data):
+        return self.scaler.inverse_transform(data)
