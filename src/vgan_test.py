@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 import torch
 import torch.nn as nn
 
-from settings import INPUTS_PATH, OUTPUTS_PATH
+from settings import OUTPUTS_PATH
 from models.VanillaGAN import VanillaGAN
 from utils.conn_data import save_pickle
 
