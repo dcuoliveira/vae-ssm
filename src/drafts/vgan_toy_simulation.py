@@ -36,7 +36,10 @@ vgan = VanillaGAN(n_input=n_input,
                   criterion=criterion,
                   batch_size=batch_size,
                   scaler_type="min_max_scaler")
-results = vgan.train(data=data, d_learning_rate=d_learning_rate, g_learning_rate=g_learning_rate)
+results = vgan.train(data=data,
+                     d_learning_rate=d_learning_rate,
+                     g_learning_rate=g_learning_rate,
+                     gaussian_initialization=True)
 
 # check if output dir exists
 if not os.path.isdir(os.path.join(OUTPUTS_PATH, model_name, target_name)):
