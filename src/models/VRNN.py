@@ -112,49 +112,7 @@ class VRNN(nn.Module):
             all_dec_mean.append(dec_mean_t)
             all_dec_std.append(dec_std_t)
 
-        return kld_loss, nll_loss, \
-            (all_enc_mean, all_enc_std), \
-            (all_dec_mean, all_dec_std)
-
-
-    def sample(self, seq_len):
-
-        sample = torch.zeros(seq_len, self.x_dim, device=device)
-
-        h = torch.zeros(self.n_layers, 1, self.h_dim, device=device)
-        for t in range(seq_len):
-
-            #prior
-            prior_t = self.prior(h[-1])
-            prior_mean_t = self.prior_mean(prior_t)
-            prior_std_t = self.prior_std(prior_t)
-
-            #sampling and reparameterization
-            z_t = self._reparametrization_trick(prior_mean_t, prior_std_t)
-            phi_z_t = self.phi_z(z_t)
-
-            #decoder
-            dec_t = self.dec(torch.cat([phi_z_t, h[-1]], 1))
-            dec_mean_t = self.dec_mean(dec_t)
-            #dec_std_t = self.dec_std(dec_t)
-
-            phi_x_t = self.phi_x(dec_mean_t)
-
-            #recurrence
-            _, h = self.rnn(torch.cat([phi_x_t, phi_z_t], 1).unsqueeze(0), h)
-
-            sample[t] = dec_mean_t.data
-
-        return sample
-
-
-    def reset_parameters(self, stdv=1e-1):
-        for weight in self.parameters():
-            weight.data.normal_(0, stdv)
-
-
-    def _init_weights(self, stdv):
-        pass
+        return kld_loss, nll_loss, (all_enc_mean, all_enc_std), (all_dec_mean, all_dec_std)
 
 
     def _reparametrization_trick(self, mean, std):
@@ -198,6 +156,7 @@ if __name__ == "__main__":
         # load toy data
         df = load_data(dataset_name="fredmd_transf_df")
         timeseries = df.values.astype('float32')
+        timeseries = (timeseries - timeseries.min()) / (timeseries.max() - timeseries.min())
 
         ## hyperparameters ##
         seed = 199402
@@ -206,8 +165,8 @@ if __name__ == "__main__":
         train_size_perc = 0.6
         learning_rate = 1e-3
         clip = 10
-        n_epochs = 5000
-        print_every = 1000
+        n_epochs = 1000
+        print_every = 100
 
         x_dim = timeseries.shape[1] # number of time series in the dataset
         h_dim = 100 # size of the latent space matrix
@@ -246,9 +205,6 @@ if __name__ == "__main__":
                 # aggregate loss function = KLdivergence - log-likelihood
                 loss = kld_loss + nll_loss
 
-                if loss.isnan().item():
-                    check = 0
-
                 loss.backward()
                 optimizer.step()
 
@@ -262,11 +218,7 @@ if __name__ == "__main__":
                         100. * batch_idx / len(train_loader),
                         kld_loss / batch_size,
                         nll_loss / batch_size))
-                    
-                    # sample = model.sample(torch.tensor(28, device=device))
-                    # plt.imshow(sample.to(torch.device('cpu')).numpy())
-                    # plt.pause(1e-6)
 
                 train_loss += loss.item()
 
-            print('====> Epoch: {} Average loss: {:.4f}'.format(epoch, train_loss / len(train_loader.dataset)))
+            # print('====> Epoch: {} Average loss: {:.4f}'.format(epoch, train_loss / len(train_loader.dataset)))
