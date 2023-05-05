@@ -178,3 +178,95 @@ class VRNN(nn.Module):
 
     def _nll_gauss(self, mean, std, x):
         return torch.sum(torch.log(std + EPS) + torch.log(2*torch.pi)/2 + (x - mean).pow(2)/(2*std.pow(2)))
+
+DEBUG = True
+
+if __name__ == "__main__":
+    
+    if DEBUG:
+        import os
+        import sys
+        import matplotlib.pyplot as plt
+        from time import time
+
+        # temporally add repo to path
+        sys.path.append(os.path.join(os.getcwd(), "src"))
+
+        from utils.conn_data import load_data, save_pickle
+        from utils.data_utils import create_ts_prediction_data
+
+        # load toy data
+        df = load_data(dataset_name="fredmd_transf_df")
+        timeseries = df.values.astype('float32')
+
+        ## hyperparameters ##
+        seed = 199402
+        seq_length = 12
+        batch_size = 10
+        train_size_perc = 0.6
+        learning_rate = 1e-3
+        clip = 10
+        n_epochs = 5000
+        print_every = 1000
+
+        x_dim = timeseries.shape[1] # number of time series in the dataset
+        h_dim = 100 # size of the latent space matrix
+        z_dim = 16
+        n_layers =  1
+
+        # build sequence prediction data
+        X = create_ts_prediction_data(timeseries, seq_length)
+
+        # manual seed
+        torch.manual_seed(seed)
+        plt.ion()
+
+        #init model + optimizer + datasets
+        train_size = int(X.shape[0] * train_size_perc)
+        test_size = int(X.shape[0] - train_size)
+        train_loader = torch.utils.data.DataLoader(X[0:train_size], batch_size=batch_size, shuffle=True)
+        test_loader = torch.utils.data.DataLoader(X[train_size:], batch_size=batch_size, shuffle=True)
+
+        model = VRNN(x_dim, h_dim, z_dim, n_layers)
+        model = model.to(device)
+        optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
+
+        init = time()
+        for epoch in range(1, n_epochs + 1):
+
+            train_loss = 0
+            for batch_idx, data in enumerate(train_loader):
+
+                data = data.to(device)
+                
+                # forward propagation
+                optimizer.zero_grad()
+                kld_loss, nll_loss, _, _ = model(data)
+
+                # aggregate loss function = KLdivergence - log-likelihood
+                loss = kld_loss + nll_loss
+
+                if loss.isnan().item():
+                    check = 0
+
+                loss.backward()
+                optimizer.step()
+
+                # grad norm clipping, only in pytorch version >= 1.10
+                nn.utils.clip_grad_norm_(model.parameters(), clip)
+
+                #printing
+                if batch_idx % print_every == 0:
+                    print('Train Epoch: {} [{}/{} ({:.0f}%)]\t KLD Loss: {:.6f} \t NLL Loss: {:.6f}'.format(
+                        epoch, batch_idx * batch_size, batch_size * (len(train_loader.dataset)//batch_size),
+                        100. * batch_idx / len(train_loader),
+                        kld_loss / batch_size,
+                        nll_loss / batch_size))
+                    
+                    # sample = model.sample(torch.tensor(28, device=device))
+                    # plt.imshow(sample.to(torch.device('cpu')).numpy())
+                    # plt.pause(1e-6)
+
+                train_loss += loss.item()
+
+            print('====> Epoch: {} Average loss: {:.4f}'.format(epoch, train_loss / len(train_loader.dataset)))
