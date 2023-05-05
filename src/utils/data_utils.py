@@ -1,6 +1,15 @@
 import torch
 import numpy as np
 
+def create_ts_prediction_data(data, seq_length):
+    
+    X = []
+    for i in range(len(data) - seq_length - 1):
+        _x = data[i:(i + seq_length)]
+        X.append(_x)
+
+    return np.array(X)
+
 def regular_numeric_scaler(data):
     pass
 
