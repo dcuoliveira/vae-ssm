@@ -156,7 +156,7 @@ if __name__ == "__main__":
 
         # load toy data
         df = load_data(dataset_name="fredmd_raw_df")
-        # cpi all itens yoy
+        # cpi all items yoy
         timeseries = (df[["CPIAUCSL"]].pct_change(12) * 100).dropna().values.astype('float32')
         timeseries = (timeseries - timeseries.min()) / (timeseries.max() - timeseries.min())
 
