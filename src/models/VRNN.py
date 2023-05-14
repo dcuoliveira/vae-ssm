@@ -2,10 +2,10 @@ import torch
 import torch.nn as nn
 
 
-"""implementation of the Variational Recurrent
+"""
+Implementation of the Variational Recurrent
 Neural Network (VRNN) from https://arxiv.org/abs/1506.02216
-using unimodal isotropic gaussian distributions for 
-inference, prior, and generating models."""
+"""
 
 # changing device
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -77,34 +77,34 @@ class VRNN(nn.Module):
 
         h = torch.zeros(self.n_layers, x.size(1), self.h_dim, device=device)
         for t in range(x.size(0)):
-
-            phi_x_t = self.phi_x(x[t])
-
-            #encoder
-            enc_t = self.enc(torch.cat([phi_x_t, h[-1]], 1))
-            enc_mean_t = self.enc_mean(enc_t)
-            enc_std_t = self.enc_std(enc_t) 
-
-            #prior
+            
+            # (0) prior
             prior_t = self.prior(h[-1])
             prior_mean_t = self.prior_mean(prior_t)
             prior_std_t = self.prior_std(prior_t)
 
-            #sampling and reparameterization
+            phi_x_t = self.phi_x(x[t])
+
+            # (1) encoder: p(z_t|x_t) 
+            enc_t = self.enc(torch.cat([phi_x_t, h[-1]], 1))
+            enc_mean_t = self.enc_mean(enc_t)
+            enc_std_t = self.enc_std(enc_t) 
+
+            # (1) sampling and reparameterization: p(z_t|x_t) 
             z_t = self._reparametrization_trick(enc_mean_t, enc_std_t)
             phi_z_t = self.phi_z(z_t)
 
-            #decoder
+            # (2) decoder: p(x_t|z_t)
             dec_t = self.dec(torch.cat([phi_z_t, h[-1]], 1))
             dec_mean_t = self.dec_mean(dec_t)
             dec_std_t = self.dec_std(dec_t)
 
-            #recurrence
+            # (3) recurrence: h_t := h = f\theta(phi_x_t, phi_z_t, h)
             _, h = self.rnn(torch.cat([phi_x_t, phi_z_t], 1).unsqueeze(0), h)
 
-            #computing losses
+            # (4) computing losses
             kld_loss += self._kld_gauss(enc_mean_t, enc_std_t, prior_mean_t, prior_std_t)
-            #nll_loss += self._nll_gauss(dec_mean_t, dec_std_t, x[t])
+            # nll_loss += self._nll_gauss(dec_mean_t, dec_std_t, x[t])
             nll_loss += self._nll_bernoulli(dec_mean_t, x[t])
 
             all_enc_std.append(enc_std_t)
@@ -146,6 +146,7 @@ if __name__ == "__main__":
         import sys
         import matplotlib.pyplot as plt
         from time import time
+        import torch.utils.data as torchdata
 
         # temporally add repo to path
         sys.path.append(os.path.join(os.getcwd(), "src"))
@@ -154,8 +155,9 @@ if __name__ == "__main__":
         from utils.data_utils import create_ts_prediction_data
 
         # load toy data
-        df = load_data(dataset_name="fredmd_transf_df")
-        timeseries = df.values.astype('float32')
+        df = load_data(dataset_name="fredmd_raw_df")
+        # cpi all itens yoy
+        timeseries = (df[["CPIAUCSL"]].pct_change(12) * 100).dropna().values.astype('float32')
         timeseries = (timeseries - timeseries.min()) / (timeseries.max() - timeseries.min())
 
         ## hyperparameters ##
@@ -163,10 +165,11 @@ if __name__ == "__main__":
         seq_length = 12
         batch_size = 10
         train_size_perc = 0.6
+        train_size = int(timeseries.shape[0] * train_size_perc)
         learning_rate = 1e-3
-        clip = 10
-        n_epochs = 1000
-        print_every = 100
+        max_norm_clip = 10
+        n_epochs = 500
+        print_every = 10
 
         x_dim = timeseries.shape[1] # number of time series in the dataset
         h_dim = 100 # size of the latent space matrix
@@ -180,17 +183,21 @@ if __name__ == "__main__":
         torch.manual_seed(seed)
         plt.ion()
 
-        #init model + optimizer + datasets
-        train_size = int(X.shape[0] * train_size_perc)
-        test_size = int(X.shape[0] - train_size)
-        train_loader = torch.utils.data.DataLoader(X[0:train_size], batch_size=batch_size, shuffle=True)
-        test_loader = torch.utils.data.DataLoader(X[train_size:], batch_size=batch_size, shuffle=True)
+        # dataset loaders
+        X_train = X[0:train_size]
+        X_test = X[train_size:]
+        train_loader = torchdata.DataLoader(X_train, batch_size=batch_size, shuffle=True)
+        test_loader = torchdata.DataLoader(X_test, batch_size=batch_size, shuffle=True)
 
+        # define model
         model = VRNN(x_dim, h_dim, z_dim, n_layers)
         model = model.to(device)
+
+        # define optimizer
         optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
 
         init = time()
+        model.train()
         for epoch in range(1, n_epochs + 1):
 
             train_loss = 0
@@ -208,17 +215,15 @@ if __name__ == "__main__":
                 loss.backward()
                 optimizer.step()
 
-                # grad norm clipping, only in pytorch version >= 1.10
-                nn.utils.clip_grad_norm_(model.parameters(), clip)
-
-                #printing
-                if batch_idx % print_every == 0:
-                    print('Train Epoch: {} [{}/{} ({:.0f}%)]\t KLD Loss: {:.6f} \t NLL Loss: {:.6f}'.format(
-                        epoch, batch_idx * batch_size, batch_size * (len(train_loader.dataset)//batch_size),
-                        100. * batch_idx / len(train_loader),
-                        kld_loss / batch_size,
-                        nll_loss / batch_size))
+                # grad norm clipping
+                # used to mitigate the problem of exploding gradients, specially when using RNNs
+                nn.utils.clip_grad_norm_(parameters=model.parameters(),
+                                         max_norm=max_norm_clip)
 
                 train_loss += loss.item()
-
-            # print('====> Epoch: {} Average loss: {:.4f}'.format(epoch, train_loss / len(train_loader.dataset)))
+            
+            # printing
+            if epoch % print_every == 0:
+                print('Train Epoch: {} KLD Loss: {:.6f} \t NLL Loss: {:.6f}'.format(epoch, kld_loss / batch_size, nll_loss / batch_size))
+        
+        model.eval()
