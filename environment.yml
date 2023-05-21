@@ -1,4 +1,4 @@
-name: fsl-ts
+name: vae-ssm
 channels:
   - pip
   - defaults
