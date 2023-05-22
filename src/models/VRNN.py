@@ -107,10 +107,10 @@ class VRNN(nn.Module):
             # nll_loss += self._nll_gauss(dec_mean_t, dec_std_t, x[t])
             nll_loss += self._nll_bernoulli(dec_mean_t, x[t])
 
-            all_enc_std.append(enc_std_t)
-            all_enc_mean.append(enc_mean_t)
-            all_dec_mean.append(dec_mean_t)
-            all_dec_std.append(dec_std_t)
+            all_enc_mean.append(enc_mean_t) # enc_mean_t: [seq_length, z_dim]
+            all_enc_std.append(enc_std_t) # enc_std_t: [seq_length, z_dim]
+            all_dec_mean.append(dec_mean_t) # dec_mean_t: [seq_length, k]
+            all_dec_std.append(dec_std_t) # dec_std_t: [seq_length, k]
 
         return kld_loss, nll_loss, (all_enc_mean, all_enc_std), (all_dec_mean, all_dec_std)
 
@@ -196,6 +196,8 @@ if __name__ == "__main__":
         # define optimizer
         optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
 
+        all_enc = []
+        all_dec = []
         init = time()
         model.train()
         for epoch in range(1, n_epochs + 1):
@@ -207,7 +209,7 @@ if __name__ == "__main__":
                 
                 # forward propagation
                 optimizer.zero_grad()
-                kld_loss, nll_loss, _, _ = model(data)
+                kld_loss, nll_loss, enc, dec = model(data)
 
                 # aggregate loss function = KLdivergence - log-likelihood
                 loss = kld_loss + nll_loss
@@ -220,7 +222,12 @@ if __name__ == "__main__":
                 nn.utils.clip_grad_norm_(parameters=model.parameters(),
                                          max_norm=max_norm_clip)
 
+                # aggregate loss
                 train_loss += loss.item()
+
+                # save encoder/decoder outputs
+                all_enc.append(enc)
+                all_dec.append(dec)
             
             # printing
             if epoch % print_every == 0:
