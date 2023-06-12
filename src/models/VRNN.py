@@ -20,7 +20,7 @@ class VRNN(nn.Module):
         self.z_dim = z_dim
         self.n_layers = n_layers
 
-        #feature-extracting transformations
+        # feature-extracting transformations
         self.phi_x = nn.Sequential(
             nn.Linear(x_dim, h_dim),
             nn.ReLU(),
@@ -30,7 +30,7 @@ class VRNN(nn.Module):
             nn.Linear(z_dim, h_dim),
             nn.ReLU())
 
-        #encoder
+        # encoder
         self.enc = nn.Sequential(
             nn.Linear(h_dim + h_dim, h_dim),
             nn.ReLU(),
@@ -41,7 +41,7 @@ class VRNN(nn.Module):
             nn.Linear(h_dim, z_dim),
             nn.Softplus())
 
-        #prior
+        # prior
         self.prior = nn.Sequential(
             nn.Linear(h_dim, h_dim),
             nn.ReLU())
@@ -50,7 +50,7 @@ class VRNN(nn.Module):
             nn.Linear(h_dim, z_dim),
             nn.Softplus())
 
-        #decoder
+        # decoder
         self.dec = nn.Sequential(
             nn.Linear(h_dim + h_dim, h_dim),
             nn.ReLU(),
@@ -59,12 +59,12 @@ class VRNN(nn.Module):
         self.dec_std = nn.Sequential(
             nn.Linear(h_dim, x_dim),
             nn.Softplus())
-        #self.dec_mean = nn.Linear(h_dim, x_dim)
+        # self.dec_mean = nn.Linear(h_dim, x_dim)
         self.dec_mean = nn.Sequential(
             nn.Linear(h_dim, x_dim),
             nn.Sigmoid())
 
-        #recurrence
+        # recurrence
         self.rnn = nn.GRU(h_dim + h_dim, h_dim, n_layers, bias)
 
 
@@ -157,7 +157,7 @@ if __name__ == "__main__":
         # load toy data
         df = load_data(dataset_name="fredmd_raw_df")
         # cpi all items yoy
-        timeseries = (df[["CPIAUCSL"]].pct_change(12) * 100).dropna().values.astype('float32')
+        timeseries = (df[["CPIAUCSL", "GS1"]].pct_change(12) * 100).dropna().values.astype('float32')
         timeseries = (timeseries - timeseries.min()) / (timeseries.max() - timeseries.min())
 
         ## hyperparameters ##
