@@ -262,7 +262,7 @@ if __name__ == "__main__":
 
         # evaluate vrnn
         eval_losses = {}
-        test_enc_dec_y = torch.ones(n_epochs + 1, batch_size * seq_length, 1 + (2 * z_dim) + (2 * x_dim))
+        test_enc_dec_y = torch.ones(batch_idx + 1, batch_size * seq_length, 1 + (2 * z_dim) + (2 * x_dim))
 
         model.eval()
         test_loss = 0
@@ -299,7 +299,7 @@ if __name__ == "__main__":
 
             all = torch.cat((true, mean_enc, sd_enc, mean_dec, sd_dec), dim=1)
 
-            test_enc_dec_y[epoch, :, :] = all.detach()
+            test_enc_dec_y[batch_idx, :, :] = all.detach()
 
             # save losses
             eval_losses[epoch] = {"kld": (kld_loss / batch_size).detach().item(),
