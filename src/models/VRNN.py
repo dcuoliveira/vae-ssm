@@ -1,11 +1,7 @@
 import torch
 import torch.nn as nn
 import pandas as pd
-
-import os
-import sys
-sys.path.append(os.path.join(os.getcwd(), "src"))
-from utils.data_utils import from_decoder_to_dict, decoder_mse
+from sklearn.metrics import mean_squared_error
 
 """
 Implementation of the Variational Recurrent
@@ -75,8 +71,8 @@ class VRNN(nn.Module):
 
     def forward(self, x):
 
-        all_enc_mean, all_enc_std = [], []
-        all_dec_mean, all_dec_std = [], []
+        all_enc_mean = all_enc_std = torch.ones(x.size(0), x.size(1), self.z_dim)
+        all_dec_mean = all_dec_std = torch.ones(x.size(0), x.size(1), self.x_dim)
         kld_loss = 0
         nll_loss = 0
 
@@ -112,10 +108,10 @@ class VRNN(nn.Module):
             # nll_loss += self._nll_gauss(dec_mean_t, dec_std_t, x[t])
             nll_loss += self._nll_bernoulli(dec_mean_t, x[t])
 
-            all_enc_mean.append(enc_mean_t) # enc_mean_t: [seq_length, z_dim]
-            all_enc_std.append(enc_std_t) # enc_std_t: [seq_length, z_dim]
-            all_dec_mean.append(dec_mean_t) # dec_mean_t: [seq_length, k]
-            all_dec_std.append(dec_std_t) # dec_std_t: [seq_length, k]
+            all_enc_mean[t, :, :] = enc_mean_t
+            all_enc_std[t, :, :] = enc_std_t 
+            all_dec_mean[t, :, :] = dec_mean_t 
+            all_dec_std[t, :, :] = dec_std_t
 
         return kld_loss, nll_loss, (all_enc_mean, all_enc_std), (all_dec_mean, all_dec_std)
 
@@ -192,8 +188,8 @@ if __name__ == "__main__":
         # dataset loaders
         X_train = X[0:train_size]
         X_test = X[train_size:]
-        train_loader = torchdata.DataLoader(X_train, batch_size=batch_size, shuffle=True)
-        test_loader = torchdata.DataLoader(X_test, batch_size=batch_size, shuffle=False)
+        train_loader = torchdata.DataLoader(X_train, batch_size=batch_size, shuffle=True, drop_last=True)
+        test_loader = torchdata.DataLoader(X_test, batch_size=batch_size, shuffle=False, drop_last=True)
 
         # define model
         model = VRNN(x_dim, h_dim, z_dim, n_layers)
@@ -203,9 +199,11 @@ if __name__ == "__main__":
         optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
 
         results = {}
-        losses = {}
-        all_enc = []
-        all_dec = []
+
+        # training vrnn
+        train_losses = {}
+        train_enc_dec_y = torch.ones(n_epochs + 1, batch_size * seq_length, 1 + (2 * z_dim) + (2 * x_dim))
+
         init = time()
         model.train()
         for epoch in range(1, n_epochs + 1):
@@ -217,8 +215,6 @@ if __name__ == "__main__":
                 # forward propagation
                 optimizer.zero_grad()
                 kld_loss, nll_loss, enc, dec = model(data)
-                tmp_decoder_dict = from_decoder_to_dict(decoder=dec, data=data)
-                tmp_mse = decoder_mse(decoder=tmp_decoder_dict)
 
                 # aggregate loss function = KLdivergence - log-likelihood
                 loss = kld_loss + nll_loss
@@ -235,31 +231,47 @@ if __name__ == "__main__":
                 # aggregate loss
                 train_loss += loss.item()
 
-                # save encoder/decoder outputs
-                all_enc.append(enc)
-                all_dec.append(dec)
+            # save encoder/decoder outputs
+            mean_enc = enc[0].reshape(enc[0].shape[0] * enc[0].shape[1], enc[0].shape[2])
+            sd_enc = enc[1].reshape(enc[1].shape[0] * enc[1].shape[1], enc[1].shape[2])
 
-                losses[epoch] = {"kld": (kld_loss / batch_size).detach().item(),
-                                 "nll": (nll_loss / batch_size).detach().item(),
-                                 "mse": tmp_mse}
+            mean_dec = dec[0].reshape(dec[0].shape[0] * dec[0].shape[1], dec[0].shape[2])
+            sd_dec = dec[1].reshape(dec[1].shape[0] * dec[1].shape[1], dec[1].shape[2])
+            true = data.reshape(data.shape[0] * data.shape[1], data.shape[2])
+            mse = mean_squared_error(y_true=true.detach().numpy(), y_pred=mean_dec.detach().numpy())
+
+            all = torch.cat((true, mean_enc, sd_enc, mean_dec, sd_dec), dim=1)
+
+            train_enc_dec_y[epoch, :, :] = all.detach()
+
+            # save losses
+            train_losses[epoch] = {"kld": (kld_loss / batch_size).detach().item(),
+                                   "nll": (nll_loss / batch_size).detach().item(),
+                                   "mse": mse}
             
             # printing
             if epoch % print_every == 0:
                 print('Train Epoch: {} KLD Loss: {:.6f} \t NLL Loss: {:.6f} \t MSE: {:.6f}'.format(epoch,
                                                                                                    kld_loss / batch_size,
                                                                                                    nll_loss / batch_size,
-                                                                                                   tmp_mse))
-        results["training"] = {"eval_metrics": pd.DataFrame(losses).T, "encoder": enc, "decoder": dec}
+                                                                                                   mse))
+        
+        # aggregate training results
+        results["training"] = {"eval_metrics": pd.DataFrame(train_losses).T,
+                               "outputs": train_enc_dec_y}
+
+        # evaluate vrnn
+        eval_losses = {}
+        test_enc_dec_y = torch.ones(n_epochs + 1, batch_size * seq_length, 1 + (2 * z_dim) + (2 * x_dim))
 
         model.eval()
+        test_loss = 0
         for batch_idx, test_data in enumerate(test_loader):
             test_data = test_data.to(device)
-
+                    
             # forward propagation
             optimizer.zero_grad()
             kld_loss, nll_loss, enc, dec = model(test_data)
-            tmp_decoder_dict = from_decoder_to_dict(decoder=dec, data=test_data)
-            tmp_mse = decoder_mse(decoder=tmp_decoder_dict)
 
             # aggregate loss function = KLdivergence - log-likelihood
             loss = kld_loss + nll_loss
@@ -275,3 +287,31 @@ if __name__ == "__main__":
 
             # aggregate loss
             train_loss += loss.item()
+
+            # save encoder/decoder outputs
+            mean_enc = enc[0].reshape(enc[0].shape[0] * enc[0].shape[1], enc[0].shape[2])
+            sd_enc = enc[1].reshape(enc[1].shape[0] * enc[1].shape[1], enc[1].shape[2])
+
+            mean_dec = dec[0].reshape(dec[0].shape[0] * dec[0].shape[1], dec[0].shape[2])
+            sd_dec = dec[1].reshape(dec[1].shape[0] * dec[1].shape[1], dec[1].shape[2])
+            true = test_data.reshape(test_data.shape[0] * test_data.shape[1], test_data.shape[2])
+            mse = mean_squared_error(y_true=true.detach().numpy(), y_pred=mean_dec.detach().numpy())
+
+            all = torch.cat((true, mean_enc, sd_enc, mean_dec, sd_dec), dim=1)
+
+            test_enc_dec_y[epoch, :, :] = all.detach()
+
+            # save losses
+            eval_losses[epoch] = {"kld": (kld_loss / batch_size).detach().item(),
+                                  "nll": (nll_loss / batch_size).detach().item(),
+                                  "mse": mse}
+            
+            print('Test : KLD Loss: {:.6f} \t NLL Loss: {:.6f} \t MSE: {:.6f}'.format(kld_loss / batch_size,
+                                                                                      nll_loss / batch_size,
+                                                                                      mse))
+            
+        # aggregate training results
+        results["test"] = {"eval_metrics": pd.DataFrame(eval_losses).T,
+                           "outputs": test_enc_dec_y}
+        
+        end = 1
