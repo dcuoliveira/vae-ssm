@@ -1,6 +1,11 @@
 import torch
 import torch.nn as nn
+import pandas as pd
 
+import os
+import sys
+sys.path.append(os.path.join(os.getcwd(), "src"))
+from utils.data_utils import from_decoder_to_dict, decoder_mse
 
 """
 Implementation of the Variational Recurrent
@@ -157,7 +162,8 @@ if __name__ == "__main__":
         # load toy data
         df = load_data(dataset_name="fredmd_raw_df")
         # cpi all items yoy
-        timeseries = (df[["CPIAUCSL", "GS1"]].pct_change(12) * 100).dropna().values.astype('float32')
+        timeseries = (df[["CPIAUCSL"]].pct_change(12) * 100).dropna().values.astype('float32')
+        # timeseries = (df[["CPIAUCSL", "GS1"]].pct_change(12) * 100).dropna().values.astype('float32')
         timeseries = (timeseries - timeseries.min()) / (timeseries.max() - timeseries.min())
 
         ## hyperparameters ##
@@ -187,7 +193,7 @@ if __name__ == "__main__":
         X_train = X[0:train_size]
         X_test = X[train_size:]
         train_loader = torchdata.DataLoader(X_train, batch_size=batch_size, shuffle=True)
-        test_loader = torchdata.DataLoader(X_test, batch_size=batch_size, shuffle=True)
+        test_loader = torchdata.DataLoader(X_test, batch_size=batch_size, shuffle=False)
 
         # define model
         model = VRNN(x_dim, h_dim, z_dim, n_layers)
@@ -196,6 +202,8 @@ if __name__ == "__main__":
         # define optimizer
         optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
 
+        results = {}
+        losses = {}
         all_enc = []
         all_dec = []
         init = time()
@@ -204,16 +212,18 @@ if __name__ == "__main__":
 
             train_loss = 0
             for batch_idx, data in enumerate(train_loader):
-
                 data = data.to(device)
                 
                 # forward propagation
                 optimizer.zero_grad()
                 kld_loss, nll_loss, enc, dec = model(data)
+                tmp_decoder_dict = from_decoder_to_dict(decoder=dec, data=data)
+                tmp_mse = decoder_mse(decoder=tmp_decoder_dict)
 
                 # aggregate loss function = KLdivergence - log-likelihood
                 loss = kld_loss + nll_loss
 
+                # back propagation
                 loss.backward()
                 optimizer.step()
 
@@ -228,9 +238,40 @@ if __name__ == "__main__":
                 # save encoder/decoder outputs
                 all_enc.append(enc)
                 all_dec.append(dec)
+
+                losses[epoch] = {"kld": (kld_loss / batch_size).detach().item(),
+                                 "nll": (nll_loss / batch_size).detach().item(),
+                                 "mse": tmp_mse}
             
             # printing
             if epoch % print_every == 0:
-                print('Train Epoch: {} KLD Loss: {:.6f} \t NLL Loss: {:.6f}'.format(epoch, kld_loss / batch_size, nll_loss / batch_size))
-        
+                print('Train Epoch: {} KLD Loss: {:.6f} \t NLL Loss: {:.6f} \t MSE: {:.6f}'.format(epoch,
+                                                                                                   kld_loss / batch_size,
+                                                                                                   nll_loss / batch_size,
+                                                                                                   tmp_mse))
+        results["training"] = {"eval_metrics": pd.DataFrame(losses).T, "encoder": enc, "decoder": dec}
+
         model.eval()
+        for batch_idx, test_data in enumerate(test_loader):
+            test_data = test_data.to(device)
+
+            # forward propagation
+            optimizer.zero_grad()
+            kld_loss, nll_loss, enc, dec = model(test_data)
+            tmp_decoder_dict = from_decoder_to_dict(decoder=dec, data=test_data)
+            tmp_mse = decoder_mse(decoder=tmp_decoder_dict)
+
+            # aggregate loss function = KLdivergence - log-likelihood
+            loss = kld_loss + nll_loss
+
+            # back propagation
+            loss.backward()
+            optimizer.step()
+
+            # grad norm clipping
+            # used to mitigate the problem of exploding gradients, specially when using RNNs
+            nn.utils.clip_grad_norm_(parameters=model.parameters(),
+                                        max_norm=max_norm_clip)
+
+            # aggregate loss
+            train_loss += loss.item()
