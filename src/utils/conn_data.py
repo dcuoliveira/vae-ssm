@@ -1,8 +1,19 @@
 import pickle
 import pandas as pd
 import os
+import torch
 
 from settings import INPUTS_PATH
+
+def find_gpu_device():
+    if torch.cuda.is_available():
+        device_name = "cuda"
+    elif torch.backends.mps.is_available():
+        device_name = "mps"
+    else:
+        device_name = "cpu"
+    
+    return device_name
 
 def save_pickle(path: str,
                 obj: dict):
