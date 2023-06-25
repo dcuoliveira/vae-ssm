@@ -1,7 +1,14 @@
+import sys
+import os
 import torch
 import torch.nn as nn
 import pandas as pd
-from sklearn.metrics import mean_squared_error
+
+import math
+
+# temporally add repo to path
+sys.path.append(os.path.join(os.getcwd(), "src"))
+from utils.conn_data import find_gpu_device
 
 """
 Implementation of the Variational Recurrent
@@ -9,7 +16,7 @@ Neural Network (VRNN) from https://arxiv.org/abs/1506.02216
 """
 
 # changing device
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+device = torch.device(find_gpu_device())
 EPS = torch.finfo(torch.float).eps # numerical logs
 
 class VRNN(nn.Module):
@@ -71,14 +78,13 @@ class VRNN(nn.Module):
 
     def forward(self, x):
 
-        all_enc_mean = all_enc_std = torch.ones(x.size(0), x.size(1), self.z_dim)
-        all_dec_mean = all_dec_std = torch.ones(x.size(0), x.size(1), self.x_dim)
+        all_enc_mean = all_enc_std = torch.zeros(x.size(0), x.size(1), self.z_dim, device=device)
+        all_dec_mean = all_dec_std = torch.zeros(x.size(0), x.size(1), self.x_dim, device=device)
         kld_loss = 0
         nll_loss = 0
 
         h = torch.zeros(self.n_layers, x.size(1), self.h_dim, device=device)
         for t in range(x.size(0)):
-            
             # (0) prior
             prior_t = self.prior(h[-1])
             prior_mean_t = self.prior_mean(prior_t)
@@ -86,12 +92,12 @@ class VRNN(nn.Module):
 
             phi_x_t = self.phi_x(x[t])
 
-            # (1) encoder: p(z_t|x_t) 
+            # (1.1) encoder: p(z_t|x_t) 
             enc_t = self.enc(torch.cat([phi_x_t, h[-1]], 1))
             enc_mean_t = self.enc_mean(enc_t)
             enc_std_t = self.enc_std(enc_t) 
 
-            # (1) sampling and reparameterization: p(z_t|x_t) 
+            # (1.2) sampling and reparameterization: p(z_t|x_t) 
             z_t = self._reparametrization_trick(enc_mean_t, enc_std_t)
             phi_z_t = self.phi_z(z_t)
 
@@ -101,6 +107,7 @@ class VRNN(nn.Module):
             dec_std_t = self.dec_std(dec_t)
 
             # (3) recurrence: h_t := h = f\theta(phi_x_t, phi_z_t, h)
+            # NOTE: GRU parameters are becoming nan after epoch=6 and batch_idx=6. Solved by lowering the learning rate.
             _, h = self.rnn(torch.cat([phi_x_t, phi_z_t], 1).unsqueeze(0), h)
 
             # (4) computing losses
@@ -168,15 +175,16 @@ if __name__ == "__main__":
         batch_size = 10
         train_size_perc = 0.6
         train_size = int(timeseries.shape[0] * train_size_perc)
-        learning_rate = 1e-3
+        learning_rate = 1e-6
         max_norm_clip = 10
         n_epochs = 500
-        print_every = 10
+        print_every = 1
 
         x_dim = timeseries.shape[1] # number of time series in the dataset
-        h_dim = 100 # size of the latent space matrix
+        h_dim = 5 # size of the latent space matrix
         z_dim = 16
         n_layers =  1
+        mse_loss = nn.MSELoss()
 
         # build sequence prediction data
         X = create_ts_prediction_data(timeseries, seq_length)
@@ -198,23 +206,25 @@ if __name__ == "__main__":
         # define optimizer
         optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
 
+        # training and evaluation slots
         results = {}
-
-        # training vrnn
         train_losses = {}
-        train_enc_dec_y = torch.ones(n_epochs + 1, batch_size * seq_length, 1 + (2 * z_dim) + (2 * x_dim))
-
+        train_enc_dec_y = torch.zeros(n_epochs + 1, batch_size * seq_length, 1 + (2 * z_dim) + (2 * x_dim), device=device)
+        test_losses = {}
+        test_enc_dec_y = torch.zeros(batch_size + 1, batch_size * seq_length, 1 + (2 * z_dim) + (2 * x_dim), device=device)
+        
+        # training vrnn
         init = time()
         model.train()
         for epoch in range(1, n_epochs + 1):
 
             train_loss = 0
             for batch_idx, data in enumerate(train_loader):
-                data = data.to(device)
-                
+                device_data = data.to(device)
+
                 # forward propagation
                 optimizer.zero_grad()
-                kld_loss, nll_loss, enc, dec = model(data)
+                kld_loss, nll_loss, enc, dec = model(device_data)
 
                 # aggregate loss function = KLdivergence - log-likelihood
                 loss = kld_loss + nll_loss
@@ -231,29 +241,40 @@ if __name__ == "__main__":
                 # aggregate loss
                 train_loss += loss.item()
 
-            # save encoder/decoder outputs
-            mean_enc = enc[0].reshape(enc[0].shape[0] * enc[0].shape[1], enc[0].shape[2])
-            sd_enc = enc[1].reshape(enc[1].shape[0] * enc[1].shape[1], enc[1].shape[2])
+            # save encoder outputs
+            enc_mean = enc[0].cpu().detach()
+            enc_sd = enc[1].cpu().detach()
+            enc_mean = enc_mean.reshape(enc_mean.shape[0] * enc_mean.shape[1], enc_mean.shape[2])
+            enc_sd = enc_sd.reshape(enc_sd.shape[0] * enc_sd.shape[1], enc_sd.shape[2])
 
-            mean_dec = dec[0].reshape(dec[0].shape[0] * dec[0].shape[1], dec[0].shape[2])
-            sd_dec = dec[1].reshape(dec[1].shape[0] * dec[1].shape[1], dec[1].shape[2])
-            true = data.reshape(data.shape[0] * data.shape[1], data.shape[2])
-            mse = mean_squared_error(y_true=true.detach().numpy(), y_pred=mean_dec.detach().numpy())
+            # save decoder outputs
+            dec_mean = dec[0].cpu().detach()
+            dec_sd = dec[1].cpu().detach()
+            dec_mean = dec_mean.reshape(dec_mean.shape[0] * dec_mean.shape[1], dec_mean.shape[2])
+            dec_sd = dec_sd.reshape(dec_sd.shape[0] * dec_sd.shape[1], dec_sd.shape[2])
 
-            all = torch.cat((true, mean_enc, sd_enc, mean_dec, sd_dec), dim=1)
+            # save true and mse
+            true = device_data.cpu().detach()
+            true = true.reshape(true.shape[0] * true.shape[1], true.shape[2])
+            mse = mse_loss(dec_mean, true).item()
 
-            train_enc_dec_y[epoch, :, :] = all.detach()
+            all = torch.cat((true, enc_mean, enc_sd, dec_mean, dec_sd), dim=1)
+
+            train_enc_dec_y[epoch, :, :] = all
+
+            avg_kld = (kld_loss / batch_size).cpu().detach().item()
+            avg_nll = (nll_loss / batch_size).cpu().detach().item()
 
             # save losses
-            train_losses[epoch] = {"kld": (kld_loss / batch_size).detach().item(),
-                                   "nll": (nll_loss / batch_size).detach().item(),
+            train_losses[epoch] = {"kld": avg_kld,
+                                   "nll": avg_nll,
                                    "mse": mse}
             
             # printing
             if epoch % print_every == 0:
                 print('Train Epoch: {} KLD Loss: {:.6f} \t NLL Loss: {:.6f} \t MSE: {:.6f}'.format(epoch,
-                                                                                                   kld_loss / batch_size,
-                                                                                                   nll_loss / batch_size,
+                                                                                                   avg_kld,
+                                                                                                   avg_nll,
                                                                                                    mse))
         
         # aggregate training results
@@ -261,17 +282,14 @@ if __name__ == "__main__":
                                "outputs": train_enc_dec_y}
 
         # evaluate vrnn
-        eval_losses = {}
-        test_enc_dec_y = torch.ones(batch_idx + 1, batch_size * seq_length, 1 + (2 * z_dim) + (2 * x_dim))
-
         model.eval()
         test_loss = 0
         for batch_idx, test_data in enumerate(test_loader):
-            test_data = test_data.to(device)
-                    
+            device_test_data = test_data.to(device)
+
             # forward propagation
             optimizer.zero_grad()
-            kld_loss, nll_loss, enc, dec = model(test_data)
+            kld_loss, nll_loss, enc, dec = model(device_test_data)
 
             # aggregate loss function = KLdivergence - log-likelihood
             loss = kld_loss + nll_loss
@@ -286,32 +304,44 @@ if __name__ == "__main__":
                                         max_norm=max_norm_clip)
 
             # aggregate loss
-            train_loss += loss.item()
+            test_loss += loss.item()
 
-            # save encoder/decoder outputs
-            mean_enc = enc[0].reshape(enc[0].shape[0] * enc[0].shape[1], enc[0].shape[2])
-            sd_enc = enc[1].reshape(enc[1].shape[0] * enc[1].shape[1], enc[1].shape[2])
+            # save encoder outputs
+            enc_mean = enc[0].cpu().detach()
+            enc_sd = enc[1].cpu().detach()
+            enc_mean = enc_mean.reshape(enc_mean.shape[0] * enc_mean.shape[1], enc_mean.shape[2])
+            enc_sd = enc_sd.reshape(enc_sd.shape[0] * enc_sd.shape[1], enc_sd.shape[2])
 
-            mean_dec = dec[0].reshape(dec[0].shape[0] * dec[0].shape[1], dec[0].shape[2])
-            sd_dec = dec[1].reshape(dec[1].shape[0] * dec[1].shape[1], dec[1].shape[2])
-            true = test_data.reshape(test_data.shape[0] * test_data.shape[1], test_data.shape[2])
-            mse = mean_squared_error(y_true=true.detach().numpy(), y_pred=mean_dec.detach().numpy())
+            # save decoder outputs
+            dec_mean = dec[0].cpu().detach()
+            dec_sd = dec[1].cpu().detach()
+            dec_mean = dec_mean.reshape(dec_mean.shape[0] * dec_mean.shape[1], dec_mean.shape[2])
+            dec_sd = dec_sd.reshape(dec_sd.shape[0] * dec_sd.shape[1], dec_sd.shape[2])
 
-            all = torch.cat((true, mean_enc, sd_enc, mean_dec, sd_dec), dim=1)
+            # save true and mse
+            true = device_data.cpu().detach()
+            true = true.reshape(true.shape[0] * true.shape[1], true.shape[2])
+            mse = mse_loss(dec_mean, true).item()
 
-            test_enc_dec_y[batch_idx, :, :] = all.detach()
+            all = torch.cat((true, enc_mean, enc_sd, dec_mean, dec_sd), dim=1)
+
+            test_enc_dec_y[epoch, :, :] = all
+
+            avg_kld = (kld_loss / batch_size).cpu().detach().item()
+            avg_nll = (nll_loss / batch_size).cpu().detach().item()
 
             # save losses
-            eval_losses[epoch] = {"kld": (kld_loss / batch_size).detach().item(),
-                                  "nll": (nll_loss / batch_size).detach().item(),
+            test_losses[epoch] = {"kld": avg_kld,
+                                  "nll": avg_nll,
                                   "mse": mse}
             
-            print('Test : KLD Loss: {:.6f} \t NLL Loss: {:.6f} \t MSE: {:.6f}'.format(kld_loss / batch_size,
-                                                                                      nll_loss / batch_size,
-                                                                                      mse))
+            print('Test Batch: {} \t KLD Loss: {:.6f} \t NLL Loss: {:.6f} \t MSE: {:.6f}'.format(batch_idx,
+                                                                                                 kld_loss / batch_size,
+                                                                                                 nll_loss / batch_size,
+                                                                                                 mse))
             
         # aggregate training results
-        results["test"] = {"eval_metrics": pd.DataFrame(eval_losses).T,
+        results["test"] = {"eval_metrics": pd.DataFrame(test_losses).T,
                            "outputs": test_enc_dec_y}
         
         end = 1
