@@ -177,8 +177,8 @@ if __name__ == "__main__":
         train_size = int(timeseries.shape[0] * train_size_perc)
         learning_rate = 1e-6
         max_norm_clip = 10
-        n_epochs = 500
-        print_every = 1
+        n_epochs = 50
+        print_every = 10
 
         x_dim = timeseries.shape[1] # number of time series in the dataset
         h_dim = 5 # size of the latent space matrix
@@ -278,8 +278,8 @@ if __name__ == "__main__":
                                                                                                    mse))
         
         # aggregate training results
-        results["training"] = {"eval_metrics": pd.DataFrame(train_losses).T,
-                               "outputs": train_enc_dec_y}
+        results["train"] = {"eval_metrics": pd.DataFrame(train_losses).T,
+                            "outputs": train_enc_dec_y}
 
         # evaluate vrnn
         model.eval()
