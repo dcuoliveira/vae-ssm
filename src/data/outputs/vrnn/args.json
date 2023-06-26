@@ -1,0 +1,9 @@
+{
+    "model_name": "vrnn",
+    "seq_length": 12,
+    "epochs": 50,
+    "batch_size": 10,
+    "h_dim": 5,
+    "z_dim": 16,
+    "n_layers": 1
+}
