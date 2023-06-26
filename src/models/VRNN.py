@@ -199,7 +199,7 @@ if __name__ == "__main__":
         X_train = X[0:train_size]
         X_test = X[train_size:]
         train_loader = torchdata.DataLoader(X_train, batch_size=batch_size, shuffle=True, drop_last=True)
-        test_loader = torchdata.DataLoader(X_test, batch_size=batch_size, shuffle=False, drop_last=False)
+        test_loader = torchdata.DataLoader(X_test, batch_size=batch_size, shuffle=False, drop_last=True)
 
         # define model
         model = VRNN(x_dim, h_dim, z_dim, n_layers)
@@ -346,17 +346,17 @@ if __name__ == "__main__":
         results["test"] = {"eval_metrics": pd.DataFrame(test_losses).T,
                            "outputs": test_enc_dec_y}
         
-        save_pickle(path=os.path.join(os.getcwd(),
-                                 "src",
-                                 "data",
-                                 "outputs",
-                                 model_name,
-                                 "{model_name}_{seq_length}_{epochs}_{batch_size}_{h_dim}_{z_dim}_{n_layers}.pickle".format(model_name=model_name,
-                                                                                                                            seq_length=seq_length,
-                                                                                                                            batch_size=batch_size,
-                                                                                                                            epochs=n_epochs,
-                                                                                                                            h_dim=h_dim,
-                                                                                                                            z_dim=z_dim,
-                                                                                                                            n_layers=n_layers)),
-                    obj=results)
+        output_path = os.path.join(os.getcwd(),
+                                   "src",
+                                   "data",
+                                   "outputs",
+                                   model_name)
+        output_name = "{model_name}_{seq_length}_{epochs}_{batch_size}_{h_dim}_{z_dim}_{n_layers}.pt".format(model_name=model_name,
+                                                                                                             seq_length=seq_length,
+                                                                                                             batch_size=batch_size,
+                                                                                                             epochs=n_epochs,
+                                                                                                             h_dim=h_dim,
+                                                                                                             z_dim=z_dim,
+                                                                                                             n_layers=n_layers)
+        torch.save(results, os.path.join(output_path, output_name))
         
