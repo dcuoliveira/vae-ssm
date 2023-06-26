@@ -186,6 +186,8 @@ if __name__ == "__main__":
         n_layers =  1
         mse_loss = nn.MSELoss()
 
+        model_name = "vrnn"
+
         # build sequence prediction data
         X = create_ts_prediction_data(timeseries, seq_length)
 
@@ -344,4 +346,17 @@ if __name__ == "__main__":
         results["test"] = {"eval_metrics": pd.DataFrame(test_losses).T,
                            "outputs": test_enc_dec_y}
         
-        end = 1
+        save_pickle(path=os.path.join(os.getcwd(),
+                                 "src",
+                                 "data",
+                                 "outputs",
+                                 model_name,
+                                 "{model_name}_{seq_length}_{epochs}_{batch_size}_{h_dim}_{z_dim}_{n_layers}.pickle".format(model_name=model_name,
+                                                                                                                            seq_length=seq_length,
+                                                                                                                            batch_size=batch_size,
+                                                                                                                            epochs=n_epochs,
+                                                                                                                            h_dim=h_dim,
+                                                                                                                            z_dim=z_dim,
+                                                                                                                            n_layers=n_layers)),
+                    obj=results)
+        
