@@ -197,7 +197,7 @@ if __name__ == "__main__":
         X_train = X[0:train_size]
         X_test = X[train_size:]
         train_loader = torchdata.DataLoader(X_train, batch_size=batch_size, shuffle=True, drop_last=True)
-        test_loader = torchdata.DataLoader(X_test, batch_size=batch_size, shuffle=False, drop_last=True)
+        test_loader = torchdata.DataLoader(X_test, batch_size=batch_size, shuffle=False, drop_last=False)
 
         # define model
         model = VRNN(x_dim, h_dim, z_dim, n_layers)
@@ -211,12 +211,12 @@ if __name__ == "__main__":
         train_losses = {}
         train_enc_dec_y = torch.zeros(n_epochs + 1, batch_size * seq_length, 1 + (2 * z_dim) + (2 * x_dim), device=device)
         test_losses = {}
-        test_enc_dec_y = torch.zeros(batch_size + 1, batch_size * seq_length, 1 + (2 * z_dim) + (2 * x_dim), device=device)
-        
+        test_enc_dec_y = torch.zeros(int(X_test.shape[0] / batch_size), batch_size * seq_length, 1 + (2 * z_dim) + (2 * x_dim), device=device)
+
         # training vrnn
         init = time()
         model.train()
-        for epoch in range(1, n_epochs + 1):
+        for epoch in range(n_epochs + 1):
 
             train_loss = 0
             for batch_idx, data in enumerate(train_loader):
@@ -281,7 +281,7 @@ if __name__ == "__main__":
         results["train"] = {"eval_metrics": pd.DataFrame(train_losses).T,
                             "outputs": train_enc_dec_y}
 
-        # evaluate vrnn
+        # test vrnn
         model.eval()
         test_loss = 0
         for batch_idx, test_data in enumerate(test_loader):
@@ -325,13 +325,13 @@ if __name__ == "__main__":
 
             all = torch.cat((true, enc_mean, enc_sd, dec_mean, dec_sd), dim=1)
 
-            test_enc_dec_y[epoch, :, :] = all
+            test_enc_dec_y[batch_idx, :, :] = all
 
             avg_kld = (kld_loss / batch_size).cpu().detach().item()
             avg_nll = (nll_loss / batch_size).cpu().detach().item()
 
             # save losses
-            test_losses[epoch] = {"kld": avg_kld,
+            test_losses[batch_idx] = {"kld": avg_kld,
                                   "nll": avg_nll,
                                   "mse": mse}
             
