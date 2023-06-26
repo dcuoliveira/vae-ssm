@@ -171,18 +171,18 @@ if __name__ == "__main__":
 
         ## hyperparameters ##
         seed = 199402
-        seq_length = 12
+        seq_length = 40
         batch_size = 10
         train_size_perc = 0.6
         train_size = int(timeseries.shape[0] * train_size_perc)
         learning_rate = 1e-6
         max_norm_clip = 10
-        n_epochs = 50
+        n_epochs = 100
         print_every = 10
 
         x_dim = timeseries.shape[1] # number of time series in the dataset
-        h_dim = 5 # size of the latent space matrix
-        z_dim = 16
+        h_dim = 5 # size of the rnn latent space
+        z_dim = 5 # size of the vae latent space
         n_layers =  1
         mse_loss = nn.MSELoss()
 
