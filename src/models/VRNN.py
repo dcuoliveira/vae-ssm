@@ -346,6 +346,8 @@ if __name__ == "__main__":
         results["test"] = {"eval_metrics": pd.DataFrame(test_losses).T,
                            "outputs": test_enc_dec_y}
         
+        results["model"] = model.state_dict()
+        
         output_path = os.path.join(os.getcwd(),
                                    "src",
                                    "data",
