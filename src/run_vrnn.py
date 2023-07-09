@@ -156,40 +156,50 @@ if __name__ == "__main__":
                                                                                                     (val_nll_loss / len(val_loader)).detach().item()))
     
     with torch.no_grad():
+        window_adj = (torch.ones(num_timesteps_in, X_test.shape[2]) * np.nan)
+
         # compute train weight predictions
         train_kld_loss, train_nll_loss, train_enc, train_dec = model.forward(X_train)
         y_train_pred = train_dec[0][:, -num_timesteps_out, :]
+        y_train_pred = torch.concat((window_adj, y_train_pred) , dim=0)
         
         # compute val weight predictions
         val_kld_loss, val_nll_loss, val_enc, val_dec = model.forward(X_val)
         y_val_pred = val_dec[0][:, -num_timesteps_out, :]
+        y_val_pred = torch.concat((window_adj, y_val_pred) , dim=0)
 
         # compute test weight predictions
         test_kld_loss, test_nll_loss, test_enc, test_dec = model.forward(X_test)
         y_test_pred = test_dec[0][:, -num_timesteps_out, :]
+        y_test_pred = torch.concat((window_adj, y_test_pred) , dim=0)
 
-    y = timeseries.copy().numpy()
-    y_pred = torch.concat((y_train_pred, y_val_pred, y_test_pred), dim=0).numpy()
-    y_out = pd.DataFrame(torch.concat(y, y_pred), columns=["y", "y_pred"])
+    y = torch.tensor(timeseries.copy())
+    y_pred = torch.concat((y_train_pred, y_val_pred, y_test_pred), dim=0)
+    y_out = pd.DataFrame(torch.concat((y, y_pred), dim=1), columns=["y", "y_pred"])
 
-    # plot
-    plt.plot(timeseries)
-    plt.plot(y_train_pred, c='r')
-    plt.plot(y_val_pred, c='r')
-    plt.plot(y_test_pred, c='g')
-    plt.show()
+    y_out.plot(secondary_y="y_pred")
 
+    results = {
+
+        "train_kld_loss": train_kld_loss_values,
+        "train_nll_loss": train_nll_losss_values,
+        "val_kld_loss": val_kld_loss_values,
+        "val_nll_loss": val_nll_losss_values,
+        "timeseries": y_out
+
+    }
     output_path = os.path.join(os.getcwd(),
                                 "src",
                                 "data",
                                 "outputs",
                                 model_name)
-    # output_name = "{model_name}_{seq_length}_{epochs}_{batch_size}_{h_dim}_{z_dim}_{n_layers}.pt".format(model_name=model_name,
-    #                                                                                                         seq_length=seq_length,
-    #                                                                                                         batch_size=batch_size,
-    #                                                                                                         epochs=n_epochs,
-    #                                                                                                         h_dim=h_dim,
-    #                                                                                                         z_dim=z_dim,
-    #                                                                                                         n_layers=n_layers)
-    # torch.save(results, os.path.join(output_path, output_name))
+    output_name = "{model_name}_{num_timesteps_in}_{num_timesteps_out}_{epochs}_{batch_size}_{h_dim}_{z_dim}_{n_layers}.pt".format(model_name=model_name,
+                                                                                                                                   num_timesteps_in=num_timesteps_in,
+                                                                                                                                   num_timesteps_out=num_timesteps_out,
+                                                                                                                                   batch_size=batch_size,
+                                                                                                                                   epochs=n_epochs,
+                                                                                                                                   h_dim=h_dim,
+                                                                                                                                   z_dim=z_dim,
+                                                                                                                                   n_layers=n_layers)
+    torch.save(results, os.path.join(output_path, output_name))
     
