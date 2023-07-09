@@ -19,13 +19,12 @@ dependencies:
   - pytorch
   - torchvision 
   - torchaudio 
-  - pyg 
-  - pytorch-sparse 
   - networkx
   - scikit-learn
   - statsmodels
   - lightgbm
   - seaborn
+  - mkl < 2022
   - pip:
     - fredapi
     - FredMD
