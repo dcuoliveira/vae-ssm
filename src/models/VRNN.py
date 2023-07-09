@@ -107,7 +107,6 @@ class VRNN(nn.Module):
             dec_std_t = self.dec_std(dec_t)
 
             # (3) recurrence: h_t := h = f\theta(phi_x_t, phi_z_t, h)
-            # NOTE: GRU parameters are becoming nan after epoch=6 and batch_idx=6. Solved by lowering the learning rate.
             _, h = self.rnn(torch.cat([phi_x_t, phi_z_t], 1).unsqueeze(0), h)
 
             # (4) computing losses
