@@ -188,8 +188,7 @@ if __name__ == "__main__":
         "timeseries": y_out
 
     }
-    output_path = os.path.join(os.getcwd(),
-                                "src",
+    output_path = os.path.join(os.path.dirname(__file__),
                                 "data",
                                 "outputs",
                                 model_name)
