@@ -65,12 +65,12 @@ if __name__ == "__main__":
    
     # create rolling window block timeseries
     # features = target because we are in the context of univariate timeseries forecasting (i.e. y_t = f(y_t-1, y_t-2, ...))
-    X_steps, prices_steps = create_online_rolling_window_ts(features=timeseries, 
-                                                            target=timeseries,
-                                                            num_timesteps_in=num_timesteps_in,
-                                                            num_timesteps_out=num_timesteps_out,
-                                                            fix_start=fix_start,
-                                                            drop_last=drop_last)
+    X_steps, y_steps = create_online_rolling_window_ts(features=timeseries, 
+                                                       target=timeseries,
+                                                       num_timesteps_in=num_timesteps_in,
+                                                       num_timesteps_out=num_timesteps_out,
+                                                       fix_start=fix_start,
+                                                       drop_last=drop_last)
 
     # manual seed
     torch.manual_seed(seed)
@@ -92,65 +92,68 @@ if __name__ == "__main__":
     model.train()
 
      # (4) training/validation + oos testing
-    test_weights = torch.zeros((X_steps.shape[0], num_timesteps_out, X_steps.shape[2]))
-    test_returns = torch.zeros((X_steps.shape[0], num_timesteps_out, X_steps.shape[2]))
+    test_preds = torch.zeros((X_steps.shape[0], num_timesteps_out, X_steps.shape[2]))
+    test_ys = torch.zeros((X_steps.shape[0], num_timesteps_out, X_steps.shape[2]))
     train_loss = torch.zeros((X_steps.shape[0], 1))
     test_loss = torch.zeros((X_steps.shape[0], 1))
 
     pbar = tqdm(range(X_steps.shape[0]-1), total=(X_steps.shape[0] + 1))
     for step in pbar:
         X_t = X_steps[step, :, :]
-        prices_t1 = prices_steps[step, :, :]
+        y_t1 = y_steps[step, :, :]
 
-        X_train_t, X_test_t, prices_train_t1, prices_test_t1 = timeseries_train_test_split_online(X=X_t,
-                                                                                                  y=prices_t1,
-                                                                                                  test_size=num_timesteps_out)
+        X_train_t, X_test_t, y_train_t1, y_test_t1 = timeseries_train_test_split_online(X=X_t,
+                                                                                        y=y_t1,
+                                                                                        test_size=num_timesteps_out)
         
-        train_loader = data.DataLoader(data.TensorDataset(X_train_t, prices_train_t1),
+        train_loader = data.DataLoader(data.TensorDataset(X_train_t, y_train_t1),
                                        shuffle=train_shuffle,
                                        batch_size=batch_size,
                                        drop_last=drop_last)
 
         train_loss_vals = 0
-        for epoch in range(epochs):
+        for epoch in range(n_epochs):
 
             # train/validate model
             model.train()
+            kld_loss_val = nll_loss_val = 0
             for X_batch, prices_batch in train_loader:
-                        
-                # compute forward propagation
-                weights_t1 = model.forward(X_batch[None, :, :])
 
-                # compute loss
-                loss, returns = lossfn(prices=prices_batch[-(num_timesteps_out + 1):], weights=weights_t1, ascent=ascent)
-                train_loss_vals += loss.detach().item() * -1
+                # forward propagation
+                kld_loss, nll_loss, enc, dec = model.forward(X_batch[None, :, :])   
+                y_batch_pred = dec[0, :, :]
 
-                # compute gradients and backpropagate
+                kld_loss_val += kld_loss
+                nll_loss_val += nll_loss
+
+                # aggregate loss function = KLdivergence - log-likelihood
+                loss = (kld_loss + nll_loss)
+
+                # back propagation
                 loss.backward()
                 optimizer.step()
                 optimizer.zero_grad()
 
-        avg_train_loss_vals = train_loss_vals / (epochs * len(train_loader))
+        avg_train_loss_vals = train_loss_vals / (n_epochs * len(train_loader))
 
         # oos test model 
         model.eval()
         with torch.no_grad():
 
-            # compute forward propagation
-            weights_t1 = model.forward(X_test_t[None, :, :])
+            # forward propagation
+            kld_loss, nll_loss, enc, dec = model.forward(X_test_t[None, :, :])   
+            y_test_pred = dec[0, :, :]
 
-            # compute loss
-            loss, returns = lossfn(prices=prices_test_t1[-(num_timesteps_out + 1):], weights=weights_t1, ascent=ascent)
-            eval_loss_vals = loss.detach().item() * -1
+            test_loss_val = (kld_loss + nll_loss)
 
             # save results
-            test_weights[step, :, :] = weights_t1
-            test_returns[step, :, :] = returns
+            test_preds[step, :, :] = y_test_pred
+            test_ys[step, :, :] = y_test_t1
 
         train_loss[step, :] = avg_train_loss_vals
-        test_loss[step, :] = eval_loss_vals
+        test_loss[step, :] = test_loss_val
 
-        pbar.set_description("Steps: %d, Train sharpe : %1.5f, Test sharpe : %1.5f" % (step, avg_train_loss_vals, eval_loss_vals))
+        pbar.set_description("Steps: %d, Train sharpe : %1.5f, Test sharpe : %1.5f" % (step, avg_train_loss_vals, test_loss_val))
 
     results = {
 
