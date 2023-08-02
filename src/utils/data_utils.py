@@ -4,10 +4,23 @@ import numpy as np
 def create_rolling_indices(num_timesteps_in, num_timesteps_out, n_timesteps, fix_start):
     
     # generate rolling window indices
-    indices = [
-        (0 if fix_start else i, i + (num_timesteps_in + num_timesteps_out))
-        for i in range(n_timesteps - (num_timesteps_in + num_timesteps_out) + 1)
-    ]
+    indices = []
+    for i in range(n_timesteps - num_timesteps_out):
+
+        if fix_start:
+            if i == 0:
+                indices.append((0, (i + num_timesteps_in)))
+            else:
+                if indices[-1][1] == (n_timesteps - num_timesteps_out):
+                    continue
+                indices.append((0,  indices[-1][1] + num_timesteps_out))
+        else:
+            if i == 0:
+                indices.append((i, (i + num_timesteps_in)))
+            else:
+                if indices[-1][1] == (n_timesteps - num_timesteps_out):
+                    continue
+                indices.append((indices[-1][0] + num_timesteps_out,  indices[-1][1] + num_timesteps_out))
 
     return indices
 
@@ -48,9 +61,6 @@ def create_online_rolling_window_ts(target, features, num_timesteps_in, num_time
     if drop_last:
         window_features = window_features[:-1]
         window_target = window_target[:-1]
-
-    if window_target[-1].shape[0] == 0:
-        window_target[-1] = torch.zeros(num_timesteps_out, features.shape[1]) *  np.nan
 
     return torch.stack(window_features), torch.stack(window_target)
 
