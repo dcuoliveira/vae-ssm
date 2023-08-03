@@ -6,6 +6,7 @@ import torch.utils.data as data
 import torch.nn as nn
 import torch
 from tqdm import tqdm
+import pandas as pd
 
 from models.VRNN import VRNN
 from utils.conn_data import load_data
@@ -18,8 +19,8 @@ parser.add_argument('--num_timesteps_out', type=int, default=1, help='steps ahea
 parser.add_argument('--fix_start', type=bool, default=False, help='fix start of the window')
 parser.add_argument('--batch_size', type=int, default=10, help='batch_size to sample from the rolling window tensor')
 parser.add_argument('--train_ratio', type=int, default=0.5, help='ratio of the data to consider as training')
-parser.add_argument('--train_shuffle', type=bool, default=True, help='shuffle blocks of the training data')
-parser.add_argument('--n_epochs', type=int, default=100, help='number of epochs to consider')
+parser.add_argument('--train_shuffle', type=bool, default=False, help='shuffle blocks of the training data')
+parser.add_argument('--n_epochs', type=int, default=10000, help='number of epochs to consider')
 parser.add_argument('--h_dim', type=int, default=5, help='size of the rnn latent space')
 parser.add_argument('--z_dim', type=int, default=5, help='size of the vae latent space')
 parser.add_argument('--n_layers', type=int, default=1, help='number of hidden layers in the rnn model')
@@ -47,13 +48,6 @@ if __name__ == "__main__":
     device = torch.device('cpu')
     mse_loss = nn.MSELoss()
 
-    # model hyperparameters
-    x_dim = 1
-    h_dim = args.h_dim
-    z_dim = args.z_dim
-    n_layers =  args.n_layers
-    model_name = args.model_name
-
     # load toy data
     df = load_data(dataset_name=args.dataset_name)
     # cpi all items yoy
@@ -71,6 +65,13 @@ if __name__ == "__main__":
                                                        num_timesteps_out=num_timesteps_out,
                                                        fix_start=fix_start,
                                                        drop_last=drop_last)
+
+    # model hyperparameters
+    x_dim = X_steps.shape[-1]
+    h_dim = args.h_dim
+    z_dim = args.z_dim
+    n_layers =  args.n_layers
+    model_name = args.model_name
 
     # manual seed
     torch.manual_seed(seed)
@@ -95,7 +96,12 @@ if __name__ == "__main__":
     test_preds = torch.zeros((X_steps.shape[0], num_timesteps_out, X_steps.shape[2]))
     test_ys = torch.zeros((X_steps.shape[0], num_timesteps_out, X_steps.shape[2]))
     train_loss = torch.zeros((X_steps.shape[0], 1))
+    train_kld_loss = torch.zeros((X_steps.shape[0], 1))
+    train_nll_loss = torch.zeros((X_steps.shape[0], 1))
+
     test_loss = torch.zeros((X_steps.shape[0], 1))
+    test_kld_loss = torch.zeros((X_steps.shape[0], 1))
+    test_nll_loss = torch.zeros((X_steps.shape[0], 1))
 
     pbar = tqdm(range(X_steps.shape[0]-1), total=(X_steps.shape[0] + 1))
     for step in pbar:
@@ -104,7 +110,7 @@ if __name__ == "__main__":
 
         X_train_t, X_test_t, y_train_t1, y_test_t1 = timeseries_train_test_split_online(X=X_t,
                                                                                         y=y_t1,
-                                                                                        test_size=num_timesteps_out)
+                                                                                        train_ratio=train_ratio)
         
         train_loader = data.DataLoader(data.TensorDataset(X_train_t, y_train_t1),
                                        shuffle=train_shuffle,
@@ -112,6 +118,8 @@ if __name__ == "__main__":
                                        drop_last=drop_last)
 
         train_loss_vals = 0
+        train_kld_loss_vals = 0
+        train_nll_loss_vals = 0
         for epoch in range(n_epochs):
 
             # train/validate model
@@ -121,7 +129,7 @@ if __name__ == "__main__":
 
                 # forward propagation
                 kld_loss, nll_loss, enc, dec = model.forward(X_batch[None, :, :])   
-                y_batch_pred = dec[0, :, :]
+                y_batch_pred = dec[0][0, :, :]
 
                 kld_loss_val += kld_loss
                 nll_loss_val += nll_loss
@@ -134,34 +142,64 @@ if __name__ == "__main__":
                 optimizer.step()
                 optimizer.zero_grad()
 
-        avg_train_loss_vals = train_loss_vals / (n_epochs * len(train_loader))
+                train_loss_vals += loss.item()
+                train_kld_loss_vals += kld_loss.item()
+                train_nll_loss_vals += nll_loss.item()
 
-        # oos test model 
+        avg_train_loss_vals = train_loss_vals / (n_epochs * len(train_loader))
+        avg_train_kld_vals = train_kld_loss_vals / (n_epochs * len(train_loader))
+        avg_train_nll_vals = train_nll_loss_vals / (n_epochs * len(train_loader))
+
+        # oos test model  
         model.eval()
         with torch.no_grad():
 
             # forward propagation
             kld_loss, nll_loss, enc, dec = model.forward(X_test_t[None, :, :])   
-            y_test_pred = dec[0, :, :]
+            y_test_pred = dec[0][0, :, :]
 
             test_loss_val = (kld_loss + nll_loss)
 
             # save results
-            test_preds[step, :, :] = y_test_pred
-            test_ys[step, :, :] = y_test_t1
+            test_preds[step, :, :] = y_test_pred[-num_timesteps_out:]
+            test_ys[step, :, :] = y_test_t1[-num_timesteps_out:]
 
         train_loss[step, :] = avg_train_loss_vals
-        test_loss[step, :] = test_loss_val
+        train_kld_loss[step, :] = avg_train_kld_vals
+        train_nll_loss[step, :] = avg_train_nll_vals
 
-        pbar.set_description("Steps: %d, Train sharpe : %1.5f, Test sharpe : %1.5f" % (step, avg_train_loss_vals, test_loss_val))
+        test_loss[step, :] = test_loss_val
+        test_kld_loss[step, :] = kld_loss.item()
+        test_nll_loss[step, :] = nll_loss.item()
+
+        pbar.set_description("Steps: %d, Test kld : %1.5f, Test nll : %1.5f" % (step, kld_loss, nll_loss))
+
+    if test_preds.dim() == 3:
+        preds = test_preds.reshape(test_preds.shape[0] * test_preds.shape[1], test_preds.shape[2])
+    else:
+        preds = test_preds
+
+    if test_ys.dim() == 3:
+        ys = test_ys.reshape(test_ys.shape[0] * test_ys.shape[1], test_ys.shape[2])
+    else:
+        ys = test_ys
+
+    # (4) save results
+    preds_df = pd.DataFrame(preds.numpy(), columns=["preds"])
+    ys_df = pd.DataFrame(ys.numpy(), columns=["target"])
+
+    df = pd.concat([preds_df, ys_df], axis=1)
 
     results = {
 
-        "train_kld_loss": train_kld_loss_values,
-        "train_nll_loss": train_nll_losss_values,
-        "val_kld_loss": val_kld_loss_values,
-        "val_nll_loss": val_nll_losss_values,
-        "timeseries": y_out
+        "train_loss": train_loss,
+        "train_kld_loss": train_kld_loss,
+        "train_nll_loss": train_nll_loss,
+        "test_loss": test_loss,
+        "test_kld_loss": test_kld_loss,
+        "test_nll_loss": test_nll_loss,
+        "prediction": preds_df,
+        "target": ys_df
 
     }
     output_path = os.path.join(os.path.dirname(__file__),
